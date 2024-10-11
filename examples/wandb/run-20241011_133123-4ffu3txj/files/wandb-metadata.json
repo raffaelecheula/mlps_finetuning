@@ -1,0 +1,43 @@
+{
+  "os": "Windows-11-10.0.22631-SP0",
+  "python": "3.12.7",
+  "startedAt": "2024-10-11T11:31:23.395627Z",
+  "program": "D:\\Work\\PythonLibraries\\mlps_finetuning\\examples\\finetune_chgnet.py",
+  "codePath": "examples\\finetune_chgnet.py",
+  "git": {
+    "remote": "https://github.com/raffaelecheula/mlps_finetuning.git",
+    "commit": "a4abf10307c2b4aa167d8f37cfc13c4d466a56b6"
+  },
+  "email": "cheula.raffaele@gmail.com",
+  "root": "D:\\Work\\PythonLibraries\\mlps_finetuning\\examples",
+  "host": "RAFFAELE-X360-W",
+  "username": "cheul",
+  "executable": "C:\\Users\\cheul\\anaconda3\\envs\\chgnet\\python.exe",
+  "codePathLocal": "finetune_chgnet.py",
+  "cpu_count": 6,
+  "cpu_count_logical": 12,
+  "gpu": "[NVIDIA GeForce GTX 1050 Ti with Max-Q Design]",
+  "gpu_count": 1,
+  "disk": {
+    "/": {
+      "total": "376120012800",
+      "used": "317811363840"
+    }
+  },
+  "memory": {
+    "total": "16864358400"
+  },
+  "cpu": {
+    "count": 6,
+    "countLogical": 12
+  },
+  "gpu_nvidia": [
+    {
+      "name": "NVIDIA GeForce GTX 1050 Ti with Max-Q Design",
+      "memoryTotal": "4294967296",
+      "cudaCores": 768,
+      "architecture": "Pascal"
+    }
+  ],
+  "cudaVersion": "12.5"
+}
