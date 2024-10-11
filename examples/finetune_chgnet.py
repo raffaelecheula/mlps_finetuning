@@ -39,7 +39,7 @@ def main():
     
     # Run finetuning.
     finetune_chgnet(
-        atoms_list=read(db_dft_name, index=":"),
+        atoms_list=read(db_dft_name, index=":")[:20],
         energy_corr_dict=energy_corr_dict,
         targets="efm",
         batch_size=2,
