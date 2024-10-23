@@ -26,7 +26,7 @@ warnings.filterwarnings("ignore")
 TORCH_DTYPE = torch.float32
 
 
-def get_train_val_test_loader(
+def get_train_val_test_loader_indices(
     dataset: Dataset,
     *,
     batch_size: int = 64,

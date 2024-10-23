@@ -10,6 +10,7 @@ from chgnet.data.dataset import StructureData, get_train_val_test_loader
 from chgnet.model.dynamics import CHGNetCalculator
 
 from mlps_finetuning.energy_ref import get_corrected_energy
+from mlps_finetuning.finetuning import get_train_val_test_loader_indices
 
 # -------------------------------------------------------------------------------------
 # ATOMS LIST TO DATASET
@@ -180,17 +181,75 @@ def finetune_chgnet_train_val(
 # FINETUNE CHGNET
 # -------------------------------------------------------------------------------------
 
-def finetune_chgnet_crossval():
-    pass
-    # TODO: implement cross-validation.
+def finetune_chgnet_crossval(
+    
+):
+    """Finetune CHGNet model from ase Atoms data."""
+    # Build dataset from atoms_list.
+    dataset = atoms_list_to_dataset(
+        atoms_list=atoms_list,
+        energy_corr_dict=energy_corr_dict,
+        targets=targets,
+    )
+    total_size = len(dataset)
+    indices = list(range(total_size))
+    random.shuffle(indices)
+    #TODO: get indices of different cv splits.
+    
+    
+    for ii in range(n_crossval):
+        # Split dataset into training, validation, and test sets.
+        train_loader, val_loader, test_loader = get_train_val_test_loader_indices(
+            dataset=dataset,
+            batch_size=batch_size,
+            train_ratio=train_ratio,
+            val_ratio=val_ratio,
+        )
+        finetune_chgnet(
+            train_loader,
+            val_loader,
+            test_loader,
+            save_dir,
+            train_composition_model,
+            targets,
+            optimizer,
+            scheduler,
+            criterion,
+            epochs,
+            learning_rate,
+            use_device,
+            print_freq,
+            wandb_path,
+        )
 
 # -------------------------------------------------------------------------------------
 # FINETUNE CHGNET
 # -------------------------------------------------------------------------------------
 
 def finetune_chgnet_groups():
-    pass
-    # TODO: implement groups splitting.
+    # Split dataset into training, validation, and test sets.
+    train_loader, val_loader, test_loader = get_train_val_test_loader_indices(
+        dataset=dataset,
+        batch_size=batch_size,
+        train_ratio=train_ratio,
+        val_ratio=val_ratio,
+    )
+    finetune_chgnet(
+        train_loader,
+        val_loader,
+        test_loader,
+        save_dir,
+        train_composition_model,
+        targets,
+        optimizer,
+        scheduler,
+        criterion,
+        epochs,
+        learning_rate,
+        use_device,
+        print_freq,
+        wandb_path,
+    )
 
 # -------------------------------------------------------------------------------------
 # END

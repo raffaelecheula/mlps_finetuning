@@ -41,6 +41,10 @@ def main():
     selection = ""
     atoms_list = get_atoms_list_from_db(db_ase=db_dft_name, selection=selection)
     
+    # TODO: finetune with crossvalidation (random).
+    # TODO: finetune with groups (e.g., selection="class=surfaces", then split
+    # based on the dopant name).
+    
     # Run finetuning.
     finetune_chgnet_train_val(
         atoms_list=atoms_list,
