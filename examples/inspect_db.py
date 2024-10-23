@@ -32,7 +32,7 @@ def main():
 
     # TODO: group dopants with different charges.
     # TODO: get indices of train test val to do out of domain tasks.
-
+    
     #gui = GUI(atoms_list)
     #gui.run()
 
