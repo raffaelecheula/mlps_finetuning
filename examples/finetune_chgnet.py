@@ -2,15 +2,7 @@
 # IMPORTS
 # -------------------------------------------------------------------------------------
 
-import os
-import json
-import yaml
-import numpy as np
-from ase.io import read
-from pymatgen.io.ase import AseAtomsAdaptor
-from chgnet.model import CHGNet
-from chgnet.trainer import Trainer
-from chgnet.data.dataset import StructureData, get_train_val_test_loader
+from ase.db import connect
 from chgnet.model.dynamics import CHGNetCalculator
 
 from mlps_finetuning.energy_ref import get_energy_corrections
@@ -38,8 +30,9 @@ def main():
         calc=calc,
     )
     
-    selection = ""
-    atoms_list = get_atoms_list_from_db(db_ase=db_dft_name, selection=selection)
+    selection = "class=surfaces"
+    db_dft = connect(db_dft_name)
+    atoms_list = get_atoms_list_from_db(db_ase=db_dft, selection=selection)
     
     # TODO: finetune with crossvalidation (random).
     # TODO: finetune with groups (e.g., selection="class=surfaces", then split
