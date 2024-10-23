@@ -80,6 +80,53 @@ def atoms_list_to_dataset(
 # -------------------------------------------------------------------------------------
 
 def finetune_chgnet(
+    train_loader,
+    val_loader,
+    test_loader,
+    save_dir,
+    train_composition_model,
+    targets,
+    optimizer,
+    scheduler,
+    criterion,
+    epochs,
+    learning_rate,
+    use_device,
+    print_freq,
+    wandb_path,
+):
+
+    # Load pretrained CHGNet model.
+    model = CHGNet.load()
+
+    # Define Trainer.
+    trainer = Trainer(
+        model=model,
+        targets=targets,
+        optimizer=optimizer,
+        scheduler=scheduler,
+        criterion=criterion,
+        epochs=epochs,
+        learning_rate=learning_rate,
+        use_device=use_device,
+        print_freq=print_freq,
+        wandb_path=wandb_path,
+    )
+
+    # Start training.
+    trainer.train(
+        train_loader=train_loader,
+        val_loader=val_loader,
+        test_loader=test_loader,
+        save_dir=save_dir,
+        train_composition_model=train_composition_model,
+    )
+
+# -------------------------------------------------------------------------------------
+# FINETUNE CHGNET
+# -------------------------------------------------------------------------------------
+
+def finetune_chgnet_train_val(
     atoms_list,
     energy_corr_dict=None,
     targets="efsm",
@@ -112,31 +159,38 @@ def finetune_chgnet(
         val_ratio=val_ratio,
     )
 
-    # Load pretrained CHGNet model.
-    model = CHGNet.load()
-
-    # Define Trainer.
-    trainer = Trainer(
-        model=model,
-        targets=targets,
-        optimizer=optimizer,
-        scheduler=scheduler,
-        criterion=criterion,
-        epochs=epochs,
-        learning_rate=learning_rate,
-        use_device=use_device,
-        print_freq=print_freq,
-        wandb_path=wandb_path,
+    finetune_chgnet(
+        train_loader,
+        val_loader,
+        test_loader,
+        save_dir,
+        train_composition_model,
+        targets,
+        optimizer,
+        scheduler,
+        criterion,
+        epochs,
+        learning_rate,
+        use_device,
+        print_freq,
+        wandb_path,
     )
 
-    # Start training.
-    trainer.train(
-        train_loader=train_loader,
-        val_loader=val_loader,
-        test_loader=test_loader,
-        save_dir=save_dir,
-        train_composition_model=train_composition_model,
-    )
+# -------------------------------------------------------------------------------------
+# FINETUNE CHGNET
+# -------------------------------------------------------------------------------------
+
+def finetune_chgnet_crossval():
+    pass
+    # TODO: implement cross-validation.
+
+# -------------------------------------------------------------------------------------
+# FINETUNE CHGNET
+# -------------------------------------------------------------------------------------
+
+def finetune_chgnet_groups():
+    pass
+    # TODO: implement groups splitting.
 
 # -------------------------------------------------------------------------------------
 # END
