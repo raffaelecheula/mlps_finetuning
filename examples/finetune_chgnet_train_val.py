@@ -49,12 +49,12 @@ def main():
         optimizer="Adam",
         scheduler="CosLR",
         criterion="MSE",
-        epochs=10,
+        epochs=100,
         learning_rate=1e-3,
         use_device="cpu",
         print_freq=10,
         wandb_path="chgnet/finetune",
-        save_dir="run_0",
+        save_dir=None,
         train_composition_model=False,
     )
 
