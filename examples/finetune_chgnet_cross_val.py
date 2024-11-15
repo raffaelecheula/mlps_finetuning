@@ -1,0 +1,66 @@
+# -------------------------------------------------------------------------------------
+# IMPORTS
+# -------------------------------------------------------------------------------------
+
+from ase.db import connect
+from chgnet.model.dynamics import CHGNetCalculator
+
+from mlps_finetuning.energy_ref import get_energy_corrections
+from mlps_finetuning.chgnet import finetune_chgnet_train_val
+from mlps_finetuning.databases import get_atoms_list_from_db
+from mlps_finetuning.chgnet import finetune_chgnet_crossval
+# -------------------------------------------------------------------------------------
+# MAIN
+# -------------------------------------------------------------------------------------
+
+def main():
+
+    # DFT database.
+    db_dft_name = "ZrO2_dft.db"
+
+    # Reference database.
+    db_ref_name = "ZrO2_ref.db"
+    yaml_name = "ZrO2_ref_chgnet.yaml"
+
+    # Get energy corrections.
+    calc = CHGNetCalculator()
+    energy_corr_dict = get_energy_corrections(
+        db_ref_name=db_ref_name,
+        yaml_name=yaml_name,
+        calc=calc,
+    )
+    
+    selection = "class=surfaces"
+    db_dft = connect(db_dft_name)
+    atoms_list = get_atoms_list_from_db(db_ase=db_dft, selection=selection)
+    print(atoms_list)
+    
+    # Run finetuning.
+    finetune_chgnet_crossval(
+        atoms_list=atoms_list,
+        energy_corr_dict=None,
+        targets="efm",
+        batch_size=8,
+        n_splits=5,
+        optimizer="Adam",
+        scheduler="CosLR",
+        criterion="MSE",
+        epochs=100,
+        learning_rate=1e-3,
+        use_device="cuda",
+        print_freq=10,
+        wandb_path="chgnet/finetune",
+        save_dir=None,
+        train_composition_model=False
+    )
+
+# -------------------------------------------------------------------------------------
+# IF NAME MAIN
+# -------------------------------------------------------------------------------------
+
+if __name__ == "__main__":
+    main()
+
+# -------------------------------------------------------------------------------------
+# END
+# -------------------------------------------------------------------------------------
