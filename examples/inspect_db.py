@@ -13,28 +13,44 @@ from mlps_finetuning.databases import get_atoms_list_from_db
 
 def main():
 
-    selection = "class=surfaces"
+    # possible selection keys:
+    # "class": it can be: molecules, bulks, surfaces, adsorbates, reactions.
+    # "dopant": the name of the dopant (including the charge).
+    # "name": the name of the structure (different meaning for each class).
+    # "index": the index of relaxation images. Initial structures have index=0.
+    # "relaxed": if True, it returns only final (relaxed) structures.
+
+    # Magnetic moments are available only for class=surfaces.
+
+    selection = "class=reactions,relaxed=True"
 
     # Initialize ase database.
     db_ase = connect(name="ZrO2_dft.db")
 
     # Print number of selected atoms.
     selected = list(db_ase.select(selection=selection))
-
     print(f"number of calculations:", len(selected))
 
+    # Get list of atoms structures from database.
     atoms_list = get_atoms_list_from_db(db_ase=db_ase, selection=selection)
 
-    dopants_list = set()
+    import numpy as np
     for atoms in atoms_list:
-        dopants_list.add(atoms.info["dopant"][:-2])
-    print(list(dopants_list))
+        try:
+            fmax = np.linalg.norm(atoms.get_forces(), axis=1).max()
+            print(atoms.info["dopant"], atoms.info["index"], fmax)
+        except: print(atoms.info["dopant"], atoms.info["index"])
 
-    # TODO: group dopants with different charges.
-    # TODO: get indices of train test val to do out of domain tasks.
-    
-    #gui = GUI(atoms_list)
-    #gui.run()
+    # Get list of groups identified by a specific key.
+    group_key = "dopant"
+    group_list = []
+    for atoms in atoms_list:
+        if atoms.info[group_key] not in group_list:
+            group_list.append(atoms.info[group_key])
+    print(group_list)
+
+    gui = GUI(atoms_list)
+    gui.run()
 
 # -------------------------------------------------------------------------------------
 # IF NAME MAIN
