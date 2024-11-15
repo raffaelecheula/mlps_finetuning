@@ -269,6 +269,7 @@ def finetune_chgnet_crossval(
     save_dir=None,
     train_composition_model=False,
     return_test=False,
+    random_state = 0
 ):
     """Finetune CHGNet model using cross-validation on ASE Atoms data."""
     import random
@@ -290,10 +291,10 @@ def finetune_chgnet_crossval(
 
     # Step 2: Shuffle indices (optional)
     indices = list(range(dataset_size))
-    random.shuffle(indices)
+    # random.shuffle(indices)
 
     # Initialize cross-validation
-    kfold = KFold(n_splits=n_splits)
+    kfold = KFold(n_splits=n_splits, random_state = random_state, shuffle = True)
     fold_results_energy = []
     fold_results_forces = []
     # Step 3: Perform K-Fold Cross-Validation
@@ -332,7 +333,7 @@ def finetune_chgnet_crossval(
         MAE_force = np.min(trainer.training_history["f"]["val"])
         # val_loss = trainer.evaluate(val_loader) #Check on this
         
-        print(f"Fold {fold + 1} Validation Loss: {val_loss}")
+        # print(f"Fold {fold + 1} Validation Loss: {val_loss}")
         fold_results_energy.append(MAE_energy)
         fold_results_forces.append(MAE_force)
 
