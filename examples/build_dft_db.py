@@ -81,6 +81,22 @@ def main():
     # Merge all atoms lists.
     atoms_list = atoms_bulks+atoms_surfaces+atoms_hydrogen+atoms_reactions
     
+    # Update information on dopant charges.
+    dopant_charges_dict = {
+        'Cd': 'Cd2+',
+        'Ce': 'Ce4+',
+        'Ga': 'Ga3+',
+        'In': 'In3+',
+        'Zn': 'Zn2+',
+        'Al': 'Al3+',
+        'Mg': 'Mg2+',
+        'Zr': 'Zr4+',
+        'Ti': 'Ti4+',
+    }
+    for atoms in atoms_list:
+        if atoms.info["dopant"] in dopant_charges_dict:
+            atoms.info["dopant"] = dopant_charges_dict[atoms.info["dopant"]]
+    
     # Write atoms to ase database.
     db_ase = connect(name=db_dft_name, append=False)
     write_atoms_list_to_db(
@@ -89,7 +105,7 @@ def main():
         keys_store=keys_store,
         keys_match=None,
         fill_stress=False,
-        fill_magmom=False,
+        fill_magmom=True,
     )
 
 # -------------------------------------------------------------------------------------
