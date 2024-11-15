@@ -18,7 +18,7 @@ from mlps_finetuning.energy_ref import get_corrected_energy
 def atoms_list_to_dataset(
     atoms_list,
     energy_corr_dict=None,
-    targets="efsm",
+    targets="efm",
 ):
     """Convert list of ase Atoms objects into StructureData dataset."""
     structure_list = []
@@ -29,6 +29,24 @@ def atoms_list_to_dataset(
     adaptor = AseAtomsAdaptor()
     for atoms in atoms_list:
         if atoms.calc is None:
+            print("No calculator attached to atoms")
+            continue
+        if not atoms.calc.results:
+            print("No results in calculator")
+            continue
+
+         # Check targets
+        if "e" in targets and "energy" not in atoms.calc.results:
+            print("Missing energy in results")
+            continue
+        if "f" in targets and "forces" not in atoms.calc.results:
+            print("Missing forces in results")
+            continue
+        if "s" in targets and "stress" not in atoms.calc.results:
+            print("Missing stress in results")
+            continue
+        if "m" in targets and "magmoms" not in atoms.calc.results:
+            print("Missing magmoms in results")
             continue
         # Get structure.
         structure = adaptor.get_structure(atoms)
@@ -250,32 +268,48 @@ def finetune_chgnet_crossval(
     wandb_path="chgnet/finetune",
     save_dir=None,
     train_composition_model=False,
+    return_test=False,
 ):
-    """Finetune CHGNet model from ase Atoms data."""
+    """Finetune CHGNet model using cross-validation on ASE Atoms data."""
     import random
     from sklearn.model_selection import KFold
-    # Build dataset from atoms_list.
+    import numpy as np
+
+    # Step 1: Convert atoms_list into a dataset
     dataset = atoms_list_to_dataset(
         atoms_list=atoms_list,
         energy_corr_dict=energy_corr_dict,
         targets=targets,
     )
-    indices = list(range(len(dataset)))
-    random.shuffle(indices) # is it necessary?
-    #TODO: get indices of different cv splits.
-    # Probably we can use KFold from sklearn.model_selection but it has to be tested.
-    # I don't know if it is a good idea to use a test set or only evaluate in val.
+    
+    # Check if dataset is large enough for the specified number of splits
+    dataset_size = len(dataset)
+    print(f"Dataset size: {dataset_size}")
+    if dataset_size < n_splits:
+        raise ValueError(f"Not enough samples ({dataset_size}) for {n_splits} splits")
+
+    # Step 2: Shuffle indices (optional)
+    indices = list(range(dataset_size))
+    random.shuffle(indices)
+
+    # Initialize cross-validation
     kfold = KFold(n_splits=n_splits)
-    for indices_train, indices_val in kfold.split(indices):
-        # Split dataset into training and validation.
+    fold_results_energy = []
+    fold_results_forces = []
+    # Step 3: Perform K-Fold Cross-Validation
+    for fold, (indices_train, indices_val) in enumerate(kfold.split(indices)):
+        print(f"Starting fold {fold + 1}/{n_splits}...")
+
+        # Step 3.1: Create data loaders for training and validation sets
         train_loader, val_loader = get_train_val_test_loader_from_indices(
             dataset=dataset,
             batch_size=batch_size,
             indices_train=indices_train,
             indices_val=indices_val,
-            return_test=False,
+            return_test=return_test,
         )
-        # Run finetuning.
+
+        # Step 3.2: Fine-tune the CHGNet model
         trainer = finetune_chgnet(
             targets=targets,
             optimizer=optimizer,
@@ -292,8 +326,26 @@ def finetune_chgnet_crossval(
             save_dir=save_dir,
             train_composition_model=train_composition_model,
         )
-        # TODO: get the results and average them.
 
+        # Step 3.3: Collect results for this fold
+        MAE_energy = np.min(trainer.training_history["e"]["val"])
+        MAE_force = np.min(trainer.training_history["f"]["val"])
+        # val_loss = trainer.evaluate(val_loader) #Check on this
+        
+        print(f"Fold {fold + 1} Validation Loss: {val_loss}")
+        fold_results_energy.append(MAE_energy)
+        fold_results_forces.append(MAE_force)
+
+    # Step 4: Calculate and print average results
+    avg_val_MAE_energy = np.mean(fold_results_energy)
+    std_val_MAE_energy = np.std(fold_results_energy)
+
+    avg_val_MAE_forces = np.mean(fold_results_forces)
+    std_val_MAE_forces = np.std(fold_results_forces)
+
+    print(f"Average Validation Loss: {avg_val_MAE_energy:.4f} ± {std_val_MAE_energy:.4f}")
+    print(f"Average Validation Loss: {avg_val_MAE_forces:.4f} ± {std_val_MAE_forces:.4f}")
+    return fold_results, avg_val_MAE_energy, std_val_MAE_energy, avg_val_MAE_forces, std_val_MAE_forces
 # -------------------------------------------------------------------------------------
 # FINETUNE CHGNET GROUPS
 # -------------------------------------------------------------------------------------

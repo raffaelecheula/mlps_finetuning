@@ -1,6 +1,9 @@
 # Custom
 wandb/
 run_*/
+*.tar
+job.err
+job.out
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
