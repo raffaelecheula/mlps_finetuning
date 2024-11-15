@@ -22,7 +22,7 @@ def main():
 
     # Magnetic moments are available only for class=surfaces.
 
-    selection = "class=reactions,relaxed=True"
+    selection = "class=surfaces,relaxed=True"
 
     # Initialize ase database.
     db_ase = connect(name="ZrO2_dft.db")
@@ -34,13 +34,6 @@ def main():
     # Get list of atoms structures from database.
     atoms_list = get_atoms_list_from_db(db_ase=db_ase, selection=selection)
 
-    import numpy as np
-    for atoms in atoms_list:
-        try:
-            fmax = np.linalg.norm(atoms.get_forces(), axis=1).max()
-            print(atoms.info["dopant"], atoms.info["index"], fmax)
-        except: print(atoms.info["dopant"], atoms.info["index"])
-
     # Get list of groups identified by a specific key.
     group_key = "dopant"
     group_list = []
@@ -49,8 +42,18 @@ def main():
             group_list.append(atoms.info[group_key])
     print(group_list)
 
-    gui = GUI(atoms_list)
-    gui.run()
+    show_atoms = True
+    write_atoms = False
+
+    if show_atoms:
+        gui = GUI(atoms_list)
+        gui.run()
+    
+    if write_atoms:
+        from ase.io import Trajectory
+        traj = Trajectory("atoms.traj", "w")
+        for atoms in atoms_list:
+            traj.write(atoms, **atoms.calc.results)
 
 # -------------------------------------------------------------------------------------
 # IF NAME MAIN
