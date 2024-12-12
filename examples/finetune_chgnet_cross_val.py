@@ -6,9 +6,9 @@ from ase.db import connect
 from chgnet.model.dynamics import CHGNetCalculator
 
 from mlps_finetuning.energy_ref import get_energy_corrections
-from mlps_finetuning.chgnet import finetune_chgnet_train_val
-from mlps_finetuning.databases import get_atoms_list_from_db
 from mlps_finetuning.chgnet import finetune_chgnet_crossval
+from mlps_finetuning.databases import get_atoms_list_from_db
+
 # -------------------------------------------------------------------------------------
 # MAIN
 # -------------------------------------------------------------------------------------
@@ -30,15 +30,15 @@ def main():
         calc=calc,
     )
     
+    # Get atoms from database.
     selection = "class=surfaces"
     db_dft = connect(db_dft_name)
     atoms_list = get_atoms_list_from_db(db_ase=db_dft, selection=selection)
-    print(atoms_list)
     
     # Run finetuning.
     finetune_chgnet_crossval(
         atoms_list=atoms_list,
-        energy_corr_dict=None,
+        energy_corr_dict=energy_corr_dict,
         targets="efm",
         batch_size=8,
         n_splits=5,
@@ -47,9 +47,9 @@ def main():
         criterion="MSE",
         epochs=100,
         learning_rate=1e-3,
-        use_device="cuda",
+        use_device=None,
         print_freq=10,
-        wandb_path="chgnet/finetune",
+        wandb_path="chgnet",
         save_dir=None,
         train_composition_model=False
     )

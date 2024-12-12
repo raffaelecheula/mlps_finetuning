@@ -6,13 +6,15 @@ import os
 import json
 import yaml
 import numpy as np
+from ase import Atoms
+from ase.calculators.calculator import Calculator
 from ase.io import read
 
 # -------------------------------------------------------------------------------------
 # GET SYMBOLS DICT
 # -------------------------------------------------------------------------------------
 
-def get_symbols_dict(atoms):
+def get_symbols_dict(atoms: Atoms) -> dict:
     """Return a dictionary with the counts of elements in the atoms."""
     symbol_list = atoms.get_chemical_symbols()
     return {
@@ -23,7 +25,7 @@ def get_symbols_dict(atoms):
 # CALCULATE ENERGY CORRECTIONS
 # -------------------------------------------------------------------------------------
 
-def calculate_energy_corrections(atoms_list, calc):
+def calculate_energy_corrections(atoms_list: list, calc: Calculator) -> dict:
     """Calculate energy correction per atomic species for finetuning of MLPs."""
     import pandas as pd
     from sklearn.linear_model import LinearRegression
@@ -53,7 +55,11 @@ def calculate_energy_corrections(atoms_list, calc):
 # GET ENERGY CORRECTIONS
 # -------------------------------------------------------------------------------------
 
-def get_energy_corrections(db_ref_name, yaml_name, calc):
+def get_energy_corrections(
+    db_ref_name: str,
+    yaml_name: str,
+    calc: Calculator,
+) -> dict:
     """Get energy_corr_dict from ase database or yaml file."""
     if os.path.isfile(yaml_name):
         # Read yaml file.
@@ -73,13 +79,21 @@ def get_energy_corrections(db_ref_name, yaml_name, calc):
 # GET CORRECTED ENERGY
 # -------------------------------------------------------------------------------------
 
-def get_corrected_energy(atoms, energy_corr_dict, energy=None):
+def get_corrected_energy(
+    atoms: Atoms,
+    energy_corr_dict: dict,
+    reverse: bool = False,
+    energy: float = None,
+) -> float:
     """Get energy of atoms, corrected with energy_corr_dict."""
     if energy is None:
         energy = atoms.get_potential_energy()
     if energy_corr_dict is not None:
         for elem, num in get_symbols_dict(atoms).items():
-            energy += energy_corr_dict[elem]*num
+            if reverse is True:
+                energy -= energy_corr_dict[elem]*num
+            else:
+                energy += energy_corr_dict[elem]*num
     return energy
 
 # -------------------------------------------------------------------------------------
