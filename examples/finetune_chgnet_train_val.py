@@ -30,13 +30,10 @@ def main():
         calc=calc,
     )
     
+    # Get atoms from database.
     selection = "class=surfaces"
     db_dft = connect(db_dft_name)
     atoms_list = get_atoms_list_from_db(db_ase=db_dft, selection=selection)
-    
-    # TODO: finetune with crossvalidation (random).
-    # TODO: finetune with groups (e.g., selection="class=surfaces", then split
-    # based on the dopant name).
     
     # Run finetuning.
     finetune_chgnet_train_val(
@@ -45,15 +42,15 @@ def main():
         targets="efm",
         batch_size=8,
         train_ratio=0.80,
-        val_ratio=0.10,
+        val_ratio=0.20,
         optimizer="Adam",
         scheduler="CosLR",
         criterion="MSE",
         epochs=100,
         learning_rate=1e-3,
-        use_device="cpu",
+        use_device=None,
         print_freq=10,
-        wandb_path="chgnet/finetune",
+        wandb_path="chgnet",
         save_dir=None,
         train_composition_model=False,
     )

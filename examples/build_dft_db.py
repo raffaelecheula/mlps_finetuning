@@ -23,7 +23,7 @@ def main():
     filename = "pw_tot.pwo"
     index = ":"
     db_dft_name = "ZrO2_dft.db"
-    keys_store = ["class", "dopant", "name", "index", "relaxed"]
+    keys_store = ["class", "species", "surface", "dopant", "uid", "index", "relaxed"]
 
     # Function to read quantum espresso output files.
     read_fun = lambda filepath, index: read_pwo(
@@ -36,7 +36,7 @@ def main():
     # Get molecules structures.
     atoms_molecules = get_atoms_from_nested_dirs(
         basedir=basedir+"Molecules",
-        tree_keys=["name"],
+        tree_keys=["species"],
         filename=filename,
         index=index,
         read_fun=read_fun,
@@ -45,7 +45,7 @@ def main():
     # Get bulks structures.
     atoms_bulks = get_atoms_from_nested_dirs(
         basedir=basedir+"Bulks",
-        tree_keys=["name"],
+        tree_keys=["species"],
         filename=filename,
         index=index,
         read_fun=read_fun,
@@ -58,28 +58,30 @@ def main():
         filename=filename,
         index=index,
         read_fun=read_fun,
-        add_info={"class": "surfaces", "name": "clean"},
+        add_info={"class": "surfaces", "species": "clean"},
     )
     # Get hydrogen adsorption structures.
     atoms_hydrogen = get_atoms_from_nested_dirs(
         basedir=basedir+"HydrogenAdsorption",
-        tree_keys=["dopant", "name"],
+        tree_keys=["dopant", "species"],
         filename=filename,
         index=index,
         read_fun=read_fun,
-        add_info={"class": "H2-structures", "name": "clean"},
+        add_info={"class": "H2-structures"},
     )
     # Get reaction paths structures.
     atoms_reactions = get_atoms_from_nested_dirs(
         basedir=basedir+"ReactionPaths",
-        tree_keys=["dopant", "class", "name"],
+        tree_keys=["dopant", "class", "species"],
         filename=filename,
         index=index,
         read_fun=read_fun,
         add_info={},
     )
     # Merge all atoms lists.
-    atoms_list = atoms_bulks+atoms_surfaces+atoms_hydrogen+atoms_reactions
+    atoms_list = (
+        atoms_molecules+atoms_bulks+atoms_surfaces+atoms_hydrogen+atoms_reactions
+    )
     
     # Update information on dopant charges.
     dopant_charges_dict = {
@@ -96,6 +98,10 @@ def main():
     for atoms in atoms_list:
         if atoms.info["dopant"] in dopant_charges_dict:
             atoms.info["dopant"] = dopant_charges_dict[atoms.info["dopant"]]
+        if atoms.info["dopant"] != "none":
+            atoms.info["surface"] = "ZrO2(101)+"+atoms.info["dopant"]
+        else:
+            atoms.info["surface"] = "none"
     
     # Write atoms to ase database.
     db_ase = connect(name=db_dft_name, append=False)

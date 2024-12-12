@@ -4,6 +4,8 @@
 
 import os
 import numpy as np
+from ase import Atoms
+from ase.db.core import Database
 from ase.io import read
 from ase.db import connect
 
@@ -11,7 +13,7 @@ from ase.db import connect
 # GET PATHS WITH PARENTS
 # -------------------------------------------------------------------------------------
 
-def get_paths_with_parents(basedir, depth):
+def get_paths_with_parents(basedir: str, depth: int) -> list:
     """Get paths with parents, at given depth."""
     cwd = os.getcwd()
     os.chdir(basedir)
@@ -35,10 +37,10 @@ def get_paths_with_parents(basedir, depth):
 # -------------------------------------------------------------------------------------
 
 def read_atoms_list(
-    filepath,
-    index,
-    read_fun=lambda filepath, index: read(filepath, index=index),
-):
+    filepath: str,
+    index: int,
+    read_fun: callable = lambda filepath, index: read(filepath, index=index),
+) -> list:
     """Read ase Atoms from file and return a list."""
     atoms_list = read_fun(filepath, index=index)
     atoms_list = atoms_list if isinstance(atoms_list, list) else [atoms_list]
@@ -48,7 +50,7 @@ def read_atoms_list(
 # STORE INDEX IN INFO
 # -------------------------------------------------------------------------------------
 
-def store_index_in_info(atoms_list):
+def store_index_in_info(atoms_list: list):
     """Store index in atoms.info dictionary."""
     for ii, atoms in enumerate(atoms_list):
         atoms.info["index"] = ii
@@ -56,18 +58,30 @@ def store_index_in_info(atoms_list):
     atoms_list[-1].info["relaxed"] = True
 
 # -------------------------------------------------------------------------------------
+# STORE UID IN INFO
+# -------------------------------------------------------------------------------------
+
+def store_uid_in_info(atoms_list: list):
+    """Store id in atoms.info dictionary."""
+    import secrets
+    identifier = secrets.token_urlsafe(8)
+    for atoms in atoms_list:
+        atoms.info["uid"] = identifier
+
+# -------------------------------------------------------------------------------------
 # GET ATOMS FROM NESTED DIRS
 # -------------------------------------------------------------------------------------
 
 def get_atoms_from_nested_dirs(
-    basedir,
-    tree_keys,
-    filename,
-    add_info={},
-    index=":",
-    read_fun=None,
-    store_index=True,
-):
+    basedir: str,
+    tree_keys: list,
+    filename: str,
+    add_info: dict = {},
+    index: int = ":",
+    read_fun: callable = None,
+    store_index: bool = True,
+    store_uid: bool = True,
+) -> list:
     """Get list of ase Atoms structures from nested directories.
     Works with a path tree structured as: basedir/arg[0]/.../arg[N]/filename.
     The atoms.info will have {tree_keys[0]: arg[0], ..., tree_keys[N]: arg[N]}.
@@ -88,7 +102,9 @@ def get_atoms_from_nested_dirs(
                 read_fun=read_fun,
             )
             if store_index is True:
-                store_index_in_info(atoms_list)
+                store_index_in_info(atoms_list=atoms_list)
+            if store_uid is True:
+                store_uid_in_info(atoms_list=atoms_list)
             for atoms in atoms_list:
                 for kk, key in enumerate(tree_keys):
                     if key is not None:
@@ -102,12 +118,12 @@ def get_atoms_from_nested_dirs(
 # -------------------------------------------------------------------------------------
 
 def get_atoms_from_os_walk(
-    basedirs,
-    filename,
-    index=":",
-    read_fun=None,
-    store_index=True,
-):
+    basedirs: list,
+    filename: str,
+    index: int = ":",
+    read_fun: callable = None,
+    store_index: bool = True,
+) -> list:
     """Get list of ase Atoms structures from nested directories with os walk."""
     atoms_all = []
     for basedir in basedirs:
@@ -129,13 +145,12 @@ def get_atoms_from_os_walk(
 # -------------------------------------------------------------------------------------
 
 def write_atoms_list_to_db(
-    atoms_list,
-    db_ase,
-    keys_store,
-    keys_match,
-    fill_stress=False,
-    fill_magmom=False,
-    
+    atoms_list: list,
+    db_ase: Database,
+    keys_store: list = [],
+    keys_match: list = None,
+    fill_stress: bool = False,
+    fill_magmom: bool = False,
 ):
     """Write list of ase Atoms to ase database."""
     for atoms in atoms_list:
@@ -153,12 +168,12 @@ def write_atoms_list_to_db(
 # -------------------------------------------------------------------------------------
 
 def write_atoms_to_db(
-    atoms,
-    db_ase,
-    keys_store={},
-    keys_match=None,
-    fill_stress=False,
-    fill_magmom=False,
+    atoms: Atoms,
+    db_ase: Database,
+    keys_store: list = [],
+    keys_match: list = None,
+    fill_stress: bool = False,
+    fill_magmom: bool = False,
 ):
     """Write atoms to ase database."""
     # Fill with zeros stress and magmoms.
@@ -167,14 +182,10 @@ def write_atoms_to_db(
     if fill_magmom and "magmoms" not in atoms.calc.results:
         atoms.calc.results["magmoms"] = np.zeros(len(atoms))
     # Get dictionary to store atoms.info into the columns of the db.
-    kwargs_store = {}
-    for key in keys_store:
-        kwargs_store[key] = atoms.info[key]
+    kwargs_store = {key: atoms.info[key] for key in keys_store}
     # Get dictionary to check if structure is already in db.
     if keys_match is not None:
-        kwargs_match = {}
-        for key in keys_match:
-            kwargs_match[key] = atoms.info[key]
+        kwargs_match = {key: atoms.info[key] for key in keys_match}
     # Write structure to db.
     if keys_match is None or db_ase.count(**kwargs_match) == 0:
         db_ase.write(atoms=atoms, data=atoms.info, **kwargs_store)
@@ -186,7 +197,11 @@ def write_atoms_to_db(
 # GET ATOMS LIST FROM DB
 # -------------------------------------------------------------------------------------
 
-def get_atoms_list_from_db(db_ase, selection="", **kwargs):
+def get_atoms_list_from_db(
+    db_ase: Database,
+    selection: str = "",
+    **kwargs,
+) -> list:
     """Get list of ase Atoms from ase database."""
     atoms_list = []
     for id in [aa.id for aa in db_ase.select(selection=selection, **kwargs)]:
@@ -196,6 +211,23 @@ def get_atoms_list_from_db(db_ase, selection="", **kwargs):
         atoms.info.update(atoms_row.key_value_pairs)
         atoms_list.append(atoms)
     return atoms_list
+
+# -------------------------------------------------------------------------------------
+# GET ATOMS FROM DB
+# -------------------------------------------------------------------------------------
+
+def get_atoms_from_db(
+    db_ase: Database,
+    selection: str = "",
+    **kwargs,
+) -> Atoms:
+    """Get ase Atoms from ase database."""
+    atoms_list = get_atoms_list_from_db(db_ase=db_ase, selection=selection, **kwargs)
+    if len(atoms_list) < 1:
+        raise RuntimeError("No atoms structure found in database.")
+    elif len(atoms_list) > 1:
+        raise RuntimeError("More than one atoms structure found in database.")
+    return atoms_list[0]
 
 # -------------------------------------------------------------------------------------
 # END
