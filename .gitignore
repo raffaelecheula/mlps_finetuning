@@ -1,6 +1,5 @@
 # Custom
 wandb/
-run_*/
 *.tar
 job.err
 job.out

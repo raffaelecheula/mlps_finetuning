@@ -219,11 +219,14 @@ def get_atoms_list_from_db(
 def get_atoms_from_db(
     db_ase: Database,
     selection: str = "",
+    none_ok: bool = False,
     **kwargs,
 ) -> Atoms:
     """Get ase Atoms from ase database."""
     atoms_list = get_atoms_list_from_db(db_ase=db_ase, selection=selection, **kwargs)
-    if len(atoms_list) < 1:
+    if none_ok is True and len(atoms_list) < 1:
+        return None
+    elif len(atoms_list) < 1:
         raise RuntimeError("No atoms structure found in database.")
     elif len(atoms_list) > 1:
         raise RuntimeError("More than one atoms structure found in database.")

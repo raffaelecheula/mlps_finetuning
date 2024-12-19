@@ -266,7 +266,6 @@ def finetune_chgnet_crossval(
     wandb_path: str = "chgnet",
     save_dir: str = None,
     train_composition_model: bool = False,
-    return_test: bool = False,
     random_state: int = 0,
     crossval: BaseCrossValidator = KFold,
     kwargs_crossval: dict = {"random_state": 42, "shuffle": True},
@@ -290,6 +289,7 @@ def finetune_chgnet_crossval(
     groups = [atoms.info[key_groups] for atoms in atoms_list] if key_groups else None
     MAE_energy_list = []
     MAE_forces_list = []
+    trainer_list = []
     indices = list(range(dataset_size))
     for fold, (indices_train, indices_val) in enumerate(
         kfold.split(indices, groups=groups)
@@ -300,7 +300,7 @@ def finetune_chgnet_crossval(
             batch_size=batch_size,
             indices_train=indices_train,
             indices_val=indices_val,
-            return_test=return_test,
+            return_test=False,
         )
         # Run fine-tuning.
         trainer = finetune_chgnet(
@@ -324,6 +324,7 @@ def finetune_chgnet_crossval(
         MAE_forces = np.min(trainer.training_history["f"]["val"])
         MAE_energy_list.append(MAE_energy)
         MAE_forces_list.append(MAE_forces)
+        trainer_list.append(trainer)
     # Calculate and print average results.
     MAE_energy_ave = np.mean(MAE_energy_list)
     MAE_energy_std = np.std(MAE_energy_list)
@@ -331,6 +332,8 @@ def finetune_chgnet_crossval(
     MAE_forces_std = np.std(MAE_forces_list)
     print(f"MAE Val energy: {MAE_energy_ave:.4f} ± {MAE_energy_std:.4f} eV/atom")
     print(f"MAE Val forces: {MAE_forces_ave:.4f} ± {MAE_forces_std:.4f} eV/Å")
+    # Return trainers.
+    return trainer_list
 
 # -------------------------------------------------------------------------------------
 # END
