@@ -18,7 +18,7 @@ def get_symbols_dict(atoms: Atoms) -> dict:
     """Return a dictionary with the counts of elements in the atoms."""
     symbol_list = atoms.get_chemical_symbols()
     return {
-        symbol: symbol_list.count(symbol) for symbol in dict.fromkeys(symbol_list)
+        symbol: int(symbol_list.count(symbol)) for symbol in dict.fromkeys(symbol_list)
     }
 
 # -------------------------------------------------------------------------------------
@@ -91,10 +91,10 @@ def get_corrected_energy(
     if energy_corr_dict is not None:
         for elem, num in get_symbols_dict(atoms).items():
             if reverse is True:
-                energy -= energy_corr_dict[elem]*num
+                energy -= energy_corr_dict[elem] * num
             else:
-                energy += energy_corr_dict[elem]*num
-    return energy
+                energy += energy_corr_dict[elem] * num
+    return float(energy)
 
 # -------------------------------------------------------------------------------------
 # END

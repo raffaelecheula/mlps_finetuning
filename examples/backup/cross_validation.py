@@ -10,11 +10,16 @@ from chgnet.model.dynamics import CHGNetCalculator
 
 from mlps_finetuning.energy_ref import get_corrected_energy, get_energy_corrections
 from mlps_finetuning.chgnet import finetune_chgnet_train_val
-from mlps_finetuning.databases import get_atoms_from_db, get_atoms_list_from_db
+from mlps_finetuning.databases import (
+    get_atoms_from_db,
+    get_atoms_list_from_db,
+    write_atoms_list_to_db,
+)
 from mlps_finetuning.workflow import (
     optimize_atoms,
-    get_reference_energies,
-    get_formation_energy,
+    get_reference_energies_adsorbates,
+    get_formation_energy_adsorbate,
+    print_energies,
 )
 
 # -------------------------------------------------------------------------------------
@@ -28,29 +33,33 @@ def main():
     n_splits = 5
     random_state = 42
     key_groups = "dopant"
-    kwargs_init = {"relaxed": True}
+    kwargs_init = {"relaxed": True, "species": "09_OH+H"}
 
     # Formation energies.
     formation_energies = True
     calculate_ref_clean = True
-    calculate_ref_gas = False
+    calculate_ref_gas = True
 
     # Device.
     use_device = None
 
+    # Results database.
+    db_res_name = "ZrO2_chgnet.db"
+    keys_store = ["class", "species", "surface", "dopant", "uid"]
+
     # Ase database.
-    db_ase_name = "ZrO2_dft.db"
+    db_ase_name = "../ZrO2_dft.db"
     selection = "class=adsorbates"
 
     # Reference database.
-    db_ref_name = "ZrO2_ref.db"
-    yaml_name = "ZrO2_ref_chgnet.yaml"
+    db_ref_name = "../ZrO2_ref.db"
+    yaml_name = "../ZrO2_ref_chgnet.yaml"
 
     # Trainer parameters.
     kwargs_trainer = {
         "targets": "efm",
         "batch_size": 8,
-        "train_ratio": 0.80,
+        "train_ratio": 0.90,
         "val_ratio": 0.10,
         "optimizer": "Adam",
         "scheduler": "CosLR",
@@ -74,6 +83,7 @@ def main():
 
     # Get list of initial atoms structures from database.
     atoms_init = get_atoms_list_from_db(db_ase, selection=selection, **kwargs_init)
+    print(f"Number of structures: {len(atoms_init)}")
     
     # Get list of all atoms structures from database.
     atoms_all = get_atoms_list_from_db(db_ase)
@@ -86,8 +96,7 @@ def main():
     )
     
     # Initialize cross-validation.
-    indices = list(range(len(atoms_init)))
-    kfold = KFold(n_splits=n_splits, random_state=random_state, shuffle=True)
+    crossval = KFold(n_splits, random_state=random_state, shuffle=True)
     
     # Get groups for splits.
     groups = [atoms.info[key_groups] for atoms in atoms_init]
@@ -96,11 +105,14 @@ def main():
     atoms_train_added = []
     
     # Loop over splits.
-    y_true = []
-    y_pred = []
+    energy_true = []
+    energy_pred = []
+    e_form_pred = []
+    e_form_true = []
     atoms_pred = []
+    indices = list(range(len(atoms_init)))
     for ii, (indices_train, indices_test) in enumerate(
-        kfold.split(indices, groups=groups)
+        crossval.split(indices, groups=groups)
     ):
         # Get training and test sets.
         uid_train = [atoms_init[ii].info["uid"] for ii in indices_train]
@@ -116,11 +128,8 @@ def main():
             )
         # Get reference energies.
         if formation_energies is True:
-            references_surf = list(
-                {atoms.info["surface"]: None for atoms in atoms_test}
-            )
-            energies_ref, energies_ref_dft, compositions_ref = get_reference_energies(
-                references_surf=references_surf,
+            energies_ref, energies_ref_dft, compositions_ref = get_reference_energies_adsorbates(
+                atoms_list=atoms_test,
                 references_gas=references_gas,
                 calc=calc,
                 db_ase=db_ase,
@@ -131,41 +140,66 @@ def main():
             )
         # Relax structures.
         for atoms in atoms_test:
+            # Optimize structure and get MLP energy.
             optimize_atoms(
                 atoms=atoms,
                 calc=calc,
                 energy_corr_dict=energy_corr_dict,
             )
-            # Get dft energy.
+            # Get DFT energy.
             atoms_dft = get_atoms_from_db(db_ase, uid=atoms.info["uid"], relaxed=True)
+            energy = atoms.get_potential_energy()
+            energy_dft = atoms_dft.get_potential_energy()
+            # Store results.
+            energy_pred.append(energy)
+            energy_true.append(energy_dft)
+            atoms.info["energy"] = energy
+            atoms.info["energy_dft"] = energy_dft
+            # Get formation energies.
             if formation_energies is True:
-                e_form = get_formation_energy(
+                # Get MLP formation energy.
+                e_form = get_formation_energy_adsorbate(
                     atoms=atoms,
                     energies_ref=energies_ref,
                     compositions_ref=compositions_ref,
                 )
-                e_form_dft = get_formation_energy(
+                # Get DFT formation energy.
+                e_form_dft = get_formation_energy_adsorbate(
                     atoms=atoms_dft,
                     energies_ref=energies_ref_dft,
                     compositions_ref=compositions_ref,
                 )
-                y_pred.append(e_form)
-                y_true.append(e_form_dft)
-                print(f"E form MLP: {e_form:+12.3f} eV")
-                print(f"E form DFT: {e_form_dft:+12.3f} eV")
-                print(f"E form dev: {e_form-e_form_dft:+12.3f} eV")
+                # Store results.
+                e_form_pred.append(e_form)
+                e_form_true.append(e_form_dft)
+                atoms.info["e_form"] = e_form
+                atoms.info["e_form_dft"] = e_form_dft
             else:
-                energy = atoms.get_potential_energy()
-                energy_dft = atoms_dft.get_potential_energy()
-                y_pred.append(energy)
-                y_true.append(energy_dft)
-                print(f"Energy MLP: {energy:+12.3f} eV")
-                print(f"Energy DFT: {energy_dft:+12.3f} eV")
-                print(f"Energy dev: {energy-energy_dft:+12.3f} eV")
+                e_form = None
+                e_form_dft = None
+            # Print energies.
+            print_energies(
+                energy=energy,
+                energy_dft=energy_dft,
+                e_form=e_form,
+                e_form_dft=e_form_dft,
+            )
+            # Append atoms to list.
             atoms_pred.append(atoms)
-    # Calculate errors.
-    mae = mean_absolute_error(y_true=y_true, y_pred=y_pred)
-    print(f"MAE energies: {mae:.3f} eV")
+    # Calculate average errors.
+    mae_energy = mean_absolute_error(y_true=energy_true, y_pred=energy_pred)
+    print(f"MAE Energy: {mae_energy:.3f} eV")
+    if formation_energies is True:
+        mae_e_form = mean_absolute_error(y_true=e_form_true, y_pred=e_form_pred)
+        print(f"MAE E_form: {mae_e_form:.3f} eV")
+    # Store results into ase database.
+    db_ase = connect(name=db_res_name, append=True)
+    write_atoms_list_to_db(
+        atoms_list=atoms_pred,
+        db_ase=db_ase,
+        keys_store=keys_store,
+        keys_match=None,
+    )
 
 # -------------------------------------------------------------------------------------
 # IF NAME MAIN

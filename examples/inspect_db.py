@@ -20,7 +20,10 @@ def main():
     # "index": the index of relaxation images. Initial structures have index=0.
     # "relaxed": if True, it returns only final (relaxed) structures.
 
-    selection = "class=surfaces,relaxed=True"
+    show_atoms = True
+    write_atoms = False
+
+    selection = "class=adsorbates,relaxed=True"
 
     # Initialize ase database.
     db_ase = connect(name="ZrO2_dft.db")
@@ -34,11 +37,8 @@ def main():
 
     # Get list of groups identified by a specific key.
     group_key = "dopant"
-    group_list = list({atoms.info[group_key]: 0 for atoms in atoms_list})
+    group_list = list({atoms.info[group_key]: None for atoms in atoms_list})
     print(group_list)
-
-    show_atoms = False
-    write_atoms = False
 
     if show_atoms:
         gui = GUI(atoms_list)
