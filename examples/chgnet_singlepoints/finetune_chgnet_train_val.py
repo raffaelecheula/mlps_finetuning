@@ -50,7 +50,7 @@ def main():
         learning_rate=1e-3,
         use_device=None,
         print_freq=10,
-        wandb_path="chgnet",
+        wandb_path="chgnet/train_val-singlepoints",
         save_dir=None,
         train_composition_model=False,
     )

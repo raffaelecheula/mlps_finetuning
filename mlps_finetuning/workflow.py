@@ -214,7 +214,7 @@ def cross_validation_with_optimization(
     atoms_pred = []
     indices = list(range(len(atoms_init)))
     for ii, (indices_train, indices_test) in enumerate(
-        crossval.split(indices, groups=groups)
+        crossval.split(X=indices, y=groups, groups=groups)
     ):
         # Get training and test sets.
         uid_train = [atoms_init[ii].info["uid"] for ii in indices_train]

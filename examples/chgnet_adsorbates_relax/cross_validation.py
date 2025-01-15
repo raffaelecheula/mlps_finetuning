@@ -4,7 +4,12 @@
 
 import numpy as np
 from ase.db import connect
-from sklearn.model_selection import KFold, StratifiedKFold, LeavePGroupsOut
+from sklearn.model_selection import (
+    KFold,
+    StratifiedKFold,
+    GroupKFold,
+    StratifiedGroupKFold,
+)
 from chgnet.model.dynamics import CHGNetCalculator
 
 from mlps_finetuning.energy_ref import get_energy_corrections
@@ -37,7 +42,6 @@ def main():
     n_gas_added = 0 # Number of times to add gas molecules to training set.
     n_clean_added = 0 # Number of times to add clean surfaces to training set.
     n_splits = 5 # Number of splits for cross-validation.
-    n_groups = 5 # 5 if only_active_dopants is True, 4 otherwise.
     only_active_dopants = True
     random_state = 42
 
@@ -76,7 +80,7 @@ def main():
         "learning_rate": 1e-3,
         "use_device": use_device,
         "print_freq": 10,
-        "wandb_path": "chgnet",
+        "wandb_path": "chgnet/crossval-adsorbates",
         "save_dir": None,
     }
     
@@ -90,15 +94,17 @@ def main():
         atoms_init = [
             atoms for atoms in atoms_init if atoms.info["dopant"] in active_dopants
         ]
-    print(f"Number of structures: {len(atoms_init)}") 
+    print(f"Number of structures: {len(atoms_init)}")
     
     # Initialize cross-validation.
     if crossval_name == "KFold":
         crossval = KFold(n_splits, random_state=random_state, shuffle=True)
-    if crossval_name == "StratifiedKFold":
+    elif crossval_name == "StratifiedKFold":
         crossval = StratifiedKFold(n_splits, random_state=random_state, shuffle=True)
-    if crossval_name == "LeavePGroupsOut":
-        crossval = LeavePGroupsOut(n_groups=n_groups)
+    elif crossval_name == "GroupKFold":
+        crossval = GroupKFold(n_splits)
+    elif crossval_name == "StratifiedGroupKFold":
+        crossval = StratifiedGroupKFold(n_splits)
     
     # Additional atoms for training.
     atoms_train_added = []
