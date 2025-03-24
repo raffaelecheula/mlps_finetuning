@@ -3,23 +3,6 @@
 # -------------------------------------------------------------------------------------
 
 import numpy as np
-from ase import Atoms
-from ase.calculators.calculator import Calculator
-from ase.calculators.singlepoint import SinglePointCalculator, all_properties
-from ase.optimize.optimize import Optimizer
-from ase.db.core import Database
-from ase.optimize import BFGS
-from ase.formula import Formula
-from sklearn.model_selection import BaseCrossValidator
-
-from mlps_finetuning.energy_ref import get_corrected_energy
-from mlps_finetuning.databases import get_atoms_list_from_db, get_atoms_from_db
-
-# -------------------------------------------------------------------------------------
-# OPTIMIZE ATOMS
-# -------------------------------------------------------------------------------------
-
-import numpy as np
 from scipy.spatial.distance import cdist
 from scipy.optimize import linear_sum_assignment
 
