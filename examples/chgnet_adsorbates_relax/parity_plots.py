@@ -2,6 +2,7 @@
 # IMPORTS
 # -------------------------------------------------------------------------------------
 
+import os
 import numpy as np
 import matplotlib.pyplot as plt
 from ase.db import connect
@@ -41,6 +42,7 @@ def main():
     species_list = list({atoms.info["species"]: None for atoms in atoms_list})
     
     # Plot formation energies.
+    os.makedirs("figures", exist_ok=True)
     for species in species_list:
         # Get atoms structures for species.
         fig, ax = plt.subplots(figsize=(6,6), dpi=100, facecolor="white")
@@ -65,8 +67,8 @@ def main():
         ax.set_title(species)
         ax.plot([e_min, e_max], [e_min, e_max], '--', color="black")
         ax.legend()
-    # Show plot.
-    plt.show()
+        # Show plot.
+        plt.savefig(f"figures/{species}.png")
 
 # -------------------------------------------------------------------------------------
 # IF NAME MAIN

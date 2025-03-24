@@ -192,6 +192,8 @@ def write_atoms_to_db(
     elif db_ase.count(**kwargs_match) == 1:
         row_id = db_ase.get(**kwargs_match).id
         db_ase.update(id=row_id, atoms=atoms, data=atoms.info, **kwargs_store)
+    else:
+        raise RuntimeError("More than one structure found in database.")
 
 # -------------------------------------------------------------------------------------
 # GET ATOMS LIST FROM DB
