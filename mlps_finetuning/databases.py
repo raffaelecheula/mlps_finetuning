@@ -4,6 +4,7 @@
 
 import os
 import numpy as np
+from tqdm import tqdm
 from ase import Atoms
 from ase.db.core import Database
 from ase.io import read
@@ -55,7 +56,8 @@ def store_index_in_info(atoms_list: list):
     for ii, atoms in enumerate(atoms_list):
         atoms.info["index"] = ii
         atoms.info["relaxed"] = False
-    atoms_list[-1].info["relaxed"] = True
+    if len(atoms_list) > 0:
+        atoms_list[-1].info["relaxed"] = True
 
 # -------------------------------------------------------------------------------------
 # STORE UID IN INFO
@@ -93,7 +95,7 @@ def get_atoms_from_nested_dirs(
         depth=len(tree_keys),
     )
     atoms_all = []
-    for path, parents in paths_with_parents:
+    for path, parents in tqdm(paths_with_parents):
         filepath = os.path.join(basedir, path, filename)
         if os.path.isfile(filepath):
             atoms_list = read_atoms_list(
@@ -153,7 +155,7 @@ def write_atoms_list_to_db(
     fill_magmom: bool = False,
 ):
     """Write list of ase Atoms to ase database."""
-    for atoms in atoms_list:
+    for atoms in tqdm(atoms_list):
         write_atoms_to_db(
             atoms=atoms,
             db_ase=db_ase,
