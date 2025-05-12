@@ -20,7 +20,6 @@ def main():
 
     # DFT output and database parameters.
     basedir = "../../doped-ZrO2/"
-    filename = "pw_tot.pwo"
     index = ":"
     db_dft_name = "ZrO2_dft.db"
     keys_store = ["class", "species", "surface", "dopant", "uid", "index", "relaxed"]
@@ -37,7 +36,7 @@ def main():
     atoms_molecules = get_atoms_from_nested_dirs(
         basedir=basedir+"Molecules",
         tree_keys=["species"],
-        filename=filename,
+        filename="pw_tot.pwo",
         index=index,
         read_fun=read_fun,
         add_info={"class": "molecules", "dopant": "none"},
@@ -46,7 +45,7 @@ def main():
     atoms_bulks = get_atoms_from_nested_dirs(
         basedir=basedir+"Bulks",
         tree_keys=["species"],
-        filename=filename,
+        filename="pw_tot.pwo",
         index=index,
         read_fun=read_fun,
         add_info={"class": "bulks", "dopant": "none"},
@@ -55,7 +54,7 @@ def main():
     atoms_surfaces = get_atoms_from_nested_dirs(
         basedir=basedir+"Surfaces",
         tree_keys=[None, "dopant"],
-        filename=filename,
+        filename="pw_tot.pwo",
         index=index,
         read_fun=read_fun,
         add_info={"class": "surfaces", "species": "clean"},
@@ -64,23 +63,37 @@ def main():
     atoms_hydrogen = get_atoms_from_nested_dirs(
         basedir=basedir+"HydrogenAdsorption",
         tree_keys=["dopant", "species"],
-        filename=filename,
+        filename="pw_tot.pwo",
         index=index,
         read_fun=read_fun,
         add_info={"class": "H2-structures"},
     )
-    # Get reaction paths structures.
-    atoms_reactions = get_atoms_from_nested_dirs(
+    # Get transiton states structures.
+    atoms_transtates = get_atoms_from_nested_dirs(
         basedir=basedir+"ReactionPaths",
         tree_keys=["dopant", "class", "species"],
-        filename=filename,
+        filename="pw_tot.pwo",
+        index=index,
+        read_fun=read_fun,
+        add_info={"image": "TS"},
+    )
+    # Get initial and final states structures.
+    atoms_images = get_atoms_from_nested_dirs(
+        basedir=basedir+"ReactionPaths",
+        tree_keys=["dopant", "class", "species", "image"],
+        filename="pw.pwo",
         index=index,
         read_fun=read_fun,
         add_info={},
     )
     # Merge all atoms lists.
     atoms_list = (
-        atoms_molecules+atoms_bulks+atoms_surfaces+atoms_hydrogen+atoms_reactions
+        atoms_molecules +
+        atoms_bulks +
+        atoms_surfaces +
+        atoms_hydrogen +
+        atoms_transtates +
+        atoms_images
     )
     
     # Update information on dopant charges.

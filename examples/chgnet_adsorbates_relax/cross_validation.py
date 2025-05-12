@@ -36,7 +36,7 @@ def main():
 
     # Cross-validation parameters.
     finetuning = False # Fine-tune the MLP model.
-    crossval_name = "KFold" # Type of cross-validation.
+    crossval_name = "StratifiedGroupKFold" # Type of cross-validation.
     key_groups = "dopant" # "dopant" or "species"
     kwargs_init = {"index": 0} # {"relaxed": True} or {"index": 0}
     n_gas_added = 0 # Number of times to add gas molecules to training set.
@@ -69,7 +69,7 @@ def main():
 
     # Trainer parameters.
     kwargs_trainer = {
-        "targets": "efm",
+        "targets": "ef",
         "batch_size": 8,
         "train_ratio": 0.90,
         "val_ratio": 0.10,
@@ -77,7 +77,7 @@ def main():
         "scheduler": "CosLR",
         "criterion": "MSE",
         "epochs": 100,
-        "learning_rate": 1e-3,
+        "learning_rate": 1e-5,
         "use_device": use_device,
         "print_freq": 10,
         "wandb_path": "chgnet/crossval-adsorbates",
