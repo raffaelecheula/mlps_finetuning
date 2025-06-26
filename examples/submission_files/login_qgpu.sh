@@ -1,13 +1,12 @@
 #!/bin/bash
 
-#SBATCH --job-name=finetune_chgnet
+#SBATCH --job-name=login
 #SBATCH --partition=qgpu
 #SBATCH --nodes=1
-#SBATCH --mem-per-cpu=6G
-#SBATCH --ntasks-per-node=32
-#SBATCH --cpus-per-task=1
-#SBATCH --gpus-per-node=1
-#SBATCH --time=01:00:00
+#SBATCH --mem=375G
+#SBATCH --cpus-per-task=36
+#SBATCH --gpus-per-node=2
+#SBATCH --time=08:00:00
 #SBATCH --error=job.err
 #SBATCH --output=job.out
 

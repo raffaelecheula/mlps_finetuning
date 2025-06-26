@@ -3,10 +3,9 @@
 # -------------------------------------------------------------------------------------
 
 from ase.db import connect
-from chgnet.model.dynamics import CHGNetCalculator
 
+from mlps_finetuning.chgnet import CHGNetCalculator, finetune_chgnet_train_val
 from mlps_finetuning.energy_ref import get_energy_corrections
-from mlps_finetuning.chgnet import finetune_chgnet_train_val
 from mlps_finetuning.databases import get_atoms_list_from_db
 
 # -------------------------------------------------------------------------------------

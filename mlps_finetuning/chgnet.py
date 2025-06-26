@@ -10,9 +10,27 @@ from pymatgen.io.ase import AseAtomsAdaptor
 from chgnet.model import CHGNet
 from chgnet.trainer import Trainer
 from chgnet.data.dataset import Dataset, StructureData, get_train_val_test_loader
-from chgnet.model.dynamics import CHGNetCalculator
+from chgnet.model.dynamics import CHGNetCalculator as CHGNetCalculatorOriginal
 
 from mlps_finetuning.energy_ref import get_corrected_energy
+
+# -------------------------------------------------------------------------------------
+# CHGNET CALCULATOR
+# -------------------------------------------------------------------------------------
+
+class CHGNetCalculator(CHGNetCalculatorOriginal):
+        
+    def __init__(
+        self,
+        **kwargs,
+    ):
+        super().__init__(**kwargs)
+        # Counter to keep track of the number of single-point evaluations.
+        self.counter = 0
+    
+    def calculate(self, atoms, properties, system_changes):
+        super().calculate(atoms, properties, system_changes)
+        self.counter += 1
 
 # -------------------------------------------------------------------------------------
 # ATOMS LIST TO DATASET
@@ -218,7 +236,7 @@ def get_train_val_test_loader_from_indices(
     from torch.utils.data.sampler import SubsetRandomSampler
     from chgnet.data.dataset import collate_graphs
     train_loader = DataLoader(
-        dataset,
+        dataset=dataset,
         batch_size=batch_size,
         collate_fn=collate_graphs,
         sampler=SubsetRandomSampler(indices=indices_train),
@@ -226,7 +244,7 @@ def get_train_val_test_loader_from_indices(
         pin_memory=pin_memory,
     )
     val_loader = DataLoader(
-        dataset,
+        dataset=dataset,
         batch_size=batch_size,
         collate_fn=collate_graphs,
         sampler=SubsetRandomSampler(indices=indices_val),
@@ -235,7 +253,7 @@ def get_train_val_test_loader_from_indices(
     )
     if return_test:
         test_loader = DataLoader(
-            dataset,
+            dataset=dataset,
             batch_size=batch_size,
             collate_fn=collate_graphs,
             sampler=SubsetRandomSampler(indices=indices_test),
@@ -251,11 +269,12 @@ def get_train_val_test_loader_from_indices(
 
 def finetune_chgnet_crossval(
     atoms_list: list,
-    energy_corr_dict: dict = None,
+    crossval: BaseCrossValidator,
     key_groups: str = None,
+    key_stratify: str = None,
+    energy_corr_dict: dict = None,
     targets: str = "efsm",
     batch_size: int = 8,
-    n_splits: int = 5,
     optimizer: str = "Adam",
     scheduler: str = "CosLR",
     criterion: str = "MSE",
@@ -263,12 +282,9 @@ def finetune_chgnet_crossval(
     learning_rate: float = 1e-4,
     use_device: str = None,
     print_freq: int = 10,
-    wandb_path: str = "chgnet",
+    wandb_path: str = "chgnet/crossval-singlepoints",
     save_dir: str = None,
     train_composition_model: bool = False,
-    random_state: int = 0,
-    crossval: BaseCrossValidator = KFold,
-    kwargs_crossval: dict = {"random_state": 42, "shuffle": True},
 ):
     """Finetune CHGNet model using cross-validation on ASE Atoms data."""
     # Convert atoms_list into a dataset.
@@ -280,19 +296,22 @@ def finetune_chgnet_crossval(
     # Check if dataset is large enough for the specified number of splits.
     dataset_size = len(dataset)
     print(f"Dataset size: {dataset_size}")
-    if dataset_size < n_splits:
-        raise ValueError(
-            f"Not enough samples ({dataset_size}) for {n_splits} splits."
-        )
-    # Perform Cross-Validation.
-    kfold = crossval(n_splits=n_splits, **kwargs_crossval)
-    groups = [atoms.info[key_groups] for atoms in atoms_list] if key_groups else None
+    # Get indices, groups, and stratify lists.
+    indices = list(range(dataset_size))
+    if key_groups is not None:
+        groups = [atoms.info[key_groups] for atoms in atoms_list]
+    else:
+        groups = None
+    if key_stratify is not None:
+        stratify = [atoms.info[key_stratify] for atoms in atoms_list]
+    else:
+        stratify = None
+    # Cross-Validation.
     MAE_energy_list = []
     MAE_forces_list = []
     trainer_list = []
-    indices = list(range(dataset_size))
-    for fold, (indices_train, indices_val) in enumerate(
-        kfold.split(indices, groups=groups)
+    for ii, (indices_train, indices_val) in enumerate(
+        crossval.split(X=indices, y=stratify, groups=groups)
     ):
         # Create data loaders for training and validation sets.
         train_loader, val_loader = get_train_val_test_loader_from_indices(

@@ -4,21 +4,18 @@
 
 import numpy as np
 from ase.db import connect
-from sklearn.model_selection import (
-    KFold,
-    StratifiedKFold,
-    GroupKFold,
-    StratifiedGroupKFold,
-)
-from chgnet.model.dynamics import CHGNetCalculator
 
+from mlps_finetuning.chgnet import (
+    CHGNetCalculator,
+    finetune_chgnet_train_val,
+)
 from mlps_finetuning.energy_ref import get_energy_corrections
-from mlps_finetuning.chgnet import finetune_chgnet_train_val
 from mlps_finetuning.databases import (
     get_atoms_list_from_db,
     write_atoms_list_to_db,
 )
 from mlps_finetuning.workflow import (
+    get_crossvalidator,
     get_reference_energies_adsorbates,
     get_formation_energy_adsorbate,
     cross_validation_with_optimization,
@@ -30,19 +27,18 @@ from mlps_finetuning.workflow import (
 
 def main():
 
-    # TODO: test different cross-validators.
-    # TODO: Test different values of n_gas.
-    # TODO: Test different trainer parameters.
-
     # Cross-validation parameters.
+    stratified = True # Stratified cross-validation.
+    group = False # Group cross-validation.
+    key_groups = "dopant" # dopant | species
+    key_stratify = "species" # dopant | species
+    n_splits = 5 # Number of splits for cross-validation.
     finetuning = False # Fine-tune the MLP model.
-    crossval_name = "StratifiedGroupKFold" # Type of cross-validation.
-    key_groups = "dopant" # "dopant" or "species"
     kwargs_init = {"index": 0} # {"relaxed": True} or {"index": 0}
     n_gas_added = 0 # Number of times to add gas molecules to training set.
     n_clean_added = 0 # Number of times to add clean surfaces to training set.
-    n_splits = 5 # Number of splits for cross-validation.
     only_active_dopants = True
+    exclude_physisorbed = True
     random_state = 42
 
     # Formation energies.
@@ -58,14 +54,9 @@ def main():
     db_ase_name = "../ZrO2_dft.db"
     selection = "class=adsorbates"
 
-    # Reference database.
-    db_ref_name = "../ZrO2_ref.db"
-    yaml_name = "../ZrO2_ref_chgnet.yaml"
-
-    # Results database.
-    db_res_name = "ZrO2_chgnet.db"
-    keys_store = ["class", "species", "surface", "dopant", "uid"]
-    keys_match = ["uid"]
+    # Energy corrections database.
+    db_corr_name = "../ZrO2_ref.db"
+    yaml_corr_name = "../ZrO2_ref_chgnet.yaml"
 
     # Trainer parameters.
     kwargs_trainer = {
@@ -86,25 +77,29 @@ def main():
     
     # Initialize ase database.
     db_ase = connect(name=db_ase_name)
-
     # Get list of initial atoms structures from database.
     atoms_init = get_atoms_list_from_db(db_ase, selection=selection, **kwargs_init)
-    if only_active_dopants:
+    if only_active_dopants is True:
         active_dopants = ["Al3+", "Cd2+", "Ga3+", "In3+", "Zn2+"]
         atoms_init = [
             atoms for atoms in atoms_init if atoms.info["dopant"] in active_dopants
         ]
+    if exclude_physisorbed is True:
+        species_dict = {}
+        excluded = ['17_CH2O+OH+H', '19_CH2O+H2O', '23_CH2O+2H', '18_CH2O+OH+H_2']
+        atoms_init = [
+            atoms for atoms in atoms_init if atoms.info["species"] not in excluded
+        ]
     print(f"Number of structures: {len(atoms_init)}")
     
     # Initialize cross-validation.
-    if crossval_name == "KFold":
-        crossval = KFold(n_splits, random_state=random_state, shuffle=True)
-    elif crossval_name == "StratifiedKFold":
-        crossval = StratifiedKFold(n_splits, random_state=random_state, shuffle=True)
-    elif crossval_name == "GroupKFold":
-        crossval = GroupKFold(n_splits)
-    elif crossval_name == "StratifiedGroupKFold":
-        crossval = StratifiedGroupKFold(n_splits)
+    crossval = get_crossvalidator(
+        stratified=stratified,
+        group=group,
+        n_splits=n_splits,
+        random_state=random_state,
+        shuffle=True,
+    )
     
     # Additional atoms for training.
     atoms_train_added = []
@@ -115,13 +110,10 @@ def main():
     
     # Get energy corrections.
     energy_corr_dict = get_energy_corrections(
-        db_ref_name=db_ref_name,
-        yaml_name=yaml_name,
+        db_corr_name=db_corr_name,
+        yaml_corr_name=yaml_corr_name,
         calc=calc,
     )
-    
-    # Get groups for splits.
-    groups = [atoms.info[key_groups] for atoms in atoms_init]
     
     # Reference energies parameters.
     ref_energies_kwargs = {
@@ -135,7 +127,8 @@ def main():
     results = cross_validation_with_optimization(
         atoms_init=atoms_init,
         db_ase=db_ase,
-        groups=groups,
+        key_groups=key_groups,
+        key_stratify=key_stratify,
         finetune_mlp_fun=finetune_chgnet_train_val,
         calc=calc,
         crossval=crossval,
@@ -149,18 +142,20 @@ def main():
         formation_energy_fun=get_formation_energy_adsorbate,
     )
     
+    # Results database.
+    model_tag = "finetuned" if finetuning is True else "pretrained"
+    db_res_name = f"ZrO2_chgnet_{model_tag}.db"
+    keys_store = ["class", "species", "surface", "dopant", "uid"]
+    keys_match = ["uid"]
+    
     # Store results into ase database.
-    db_ase = connect(name=db_res_name, append=True)
+    db_res = connect(name=db_res_name, append=True)
     write_atoms_list_to_db(
         atoms_list=results["atoms_pred"],
-        db_ase=db_ase,
+        db_ase=db_res,
         keys_store=keys_store,
         keys_match=keys_match,
     )
-    energy_true = results["energy_true"]
-    energy_pred = results["energy_pred"]
-    e_form_true = results["e_form_true"]
-    e_form_pred = results["e_form_pred"]
 
 # -------------------------------------------------------------------------------------
 # IF NAME MAIN

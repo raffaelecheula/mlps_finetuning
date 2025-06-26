@@ -4,20 +4,18 @@
 
 import numpy as np
 from ase.db import connect
-from sklearn.model_selection import (
-    KFold,
-    StratifiedKFold,
-    GroupKFold,
-    StratifiedGroupKFold,
-)
 
-from mlps_finetuning.chgnet import CHGNetCalculator, finetune_chgnet_train_val
+from mlps_finetuning.ocp import (
+    OCPCalculator,
+    finetune_ocp_train_val,
+)
 from mlps_finetuning.energy_ref import get_energy_corrections
 from mlps_finetuning.databases import (
     get_atoms_list_from_db,
     write_atoms_list_to_db,
 )
 from mlps_finetuning.workflow import (
+    get_crossvalidator,
     get_reference_energies_adsorbates,
     get_formation_energy_adsorbate,
     cross_validation_with_optimization,
@@ -29,17 +27,18 @@ from mlps_finetuning.workflow import (
 
 def main():
 
-    # TODO: test different cross-validators.
-    # TODO: Test different values of n_gas.
-    # TODO: Test different trainer parameters.
-
     # Cross-validation parameters.
+    stratified = True # Stratified cross-validation.
+    group = False # Group cross-validation.
+    key_groups = "dopant" # dopant | species
+    key_stratify = "species" # dopant | species
+    n_splits = 5 # Number of splits for cross-validation.
     finetuning = False # Fine-tune the MLP model.
-    crossval_name = "KFold" # Type of cross-validation.
-    key_groups = "dopant" # "dopant" or "species"
-    kwargs_init = {"relaxed": True} # {"relaxed": True} or {"index": 0}
+    kwargs_init = {"index": 0} # {"relaxed": True} or {"index": 0}
     n_gas_added = 0 # Number of times to add gas molecules to training set.
-    n_splits = 5
+    n_clean_added = 0 # Number of times to add clean surfaces to training set.
+    only_active_dopants = True
+    exclude_physisorbed = True
     random_state = 42
 
     # Formation energies.
@@ -48,59 +47,74 @@ def main():
     calculate_ref_gas = True
 
     # Ase calculator.
-    use_device = None
-    calc = CHGNetCalculator(use_device=use_device)
+    model_name = "GemNet-OC-S2EFS-OC20+OC22"
+    local_cache = "pretrained_models"
+    calc = OCPCalculator(
+        model_name=model_name,
+        local_cache=local_cache,
+        cpu=False,
+    )
+    config_dict = calc.config
 
     # Ase database.
     db_ase_name = "../ZrO2_dft.db"
-    selection = "class=surfaces"
+    selection = "class=adsorbates"
 
     # Energy corrections database.
     db_corr_name = "../ZrO2_ref.db"
-    yaml_corr_name = "../ZrO2_ref_chgnet.yaml"
-
-    # Results database.
-    db_res_name = "ZrO2_chgnet.db"
-    keys_store = ["class", "species", "surface", "dopant", "uid"]
-    keys_match = ["uid"]
+    yaml_corr_name = "../ZrO2_ref_ocp.yaml"
 
     # Trainer parameters.
     kwargs_trainer = {
-        "targets": "efm",
-        "batch_size": 8,
-        "train_ratio": 0.90,
-        "val_ratio": 0.10,
-        "optimizer": "Adam",
-        "scheduler": "CosLR",
-        "criterion": "MSE",
-        "epochs": 100,
-        "learning_rate": 1e-3,
-        "use_device": use_device,
-        "print_freq": 10,
-        "wandb_path": "chgnet/crossval-surfaces",
-        "save_dir": None,
+        "config_dict": config_dict,
+        "kwargs_config": {
+            "gpus": 1,
+            "optim.eval_every": 10,
+            "optim.max_epochs": 100,
+            "optim.lr_initial": 1e-5,
+            "optim.batch_size": 4,
+            "optim.num_workers": 4,
+            "logger": "tensorboard",
+            "task.primary_metric": "forces_mae",
+        },
+        "kwargs_main": {
+            "identifier": "finetuning",
+            "timestamp_id": "model_01",
+        }
     }
     
     # Initialize ase database.
     db_ase = connect(name=db_ase_name)
-
     # Get list of initial atoms structures from database.
     atoms_init = get_atoms_list_from_db(db_ase, selection=selection, **kwargs_init)
+    if only_active_dopants is True:
+        active_dopants = ["Al3+", "Cd2+", "Ga3+", "In3+", "Zn2+"]
+        atoms_init = [
+            atoms for atoms in atoms_init if atoms.info["dopant"] in active_dopants
+        ]
+    if exclude_physisorbed is True:
+        species_dict = {}
+        excluded = ['17_CH2O+OH+H', '19_CH2O+H2O', '23_CH2O+2H', '18_CH2O+OH+H_2']
+        atoms_init = [
+            atoms for atoms in atoms_init if atoms.info["species"] not in excluded
+        ]
     print(f"Number of structures: {len(atoms_init)}")
     
     # Initialize cross-validation.
-    if crossval_name == "KFold":
-        crossval = KFold(n_splits, random_state=random_state, shuffle=True)
-    elif crossval_name == "StratifiedKFold":
-        crossval = StratifiedKFold(n_splits, random_state=random_state, shuffle=True)
-    elif crossval_name == "GroupKFold":
-        crossval = GroupKFold(n_splits)
-    elif crossval_name == "StratifiedGroupKFold":
-        crossval = StratifiedGroupKFold(n_splits)
+    crossval = get_crossvalidator(
+        stratified=stratified,
+        group=group,
+        n_splits=n_splits,
+        random_state=random_state,
+        shuffle=True,
+    )
     
     # Additional atoms for training.
+    atoms_train_added = []
     kwargs_match = {"class": "molecules"}
-    atoms_train_added = get_atoms_list_from_db(db_ase, **kwargs_match) * n_gas_added
+    atoms_train_added += get_atoms_list_from_db(db_ase, **kwargs_match) * n_gas_added
+    kwargs_match = {"class": "adsorbates", "species": "00_clean"}
+    atoms_train_added += get_atoms_list_from_db(db_ase, **kwargs_match) * n_clean_added
     
     # Get energy corrections.
     energy_corr_dict = get_energy_corrections(
@@ -124,8 +138,9 @@ def main():
     results = cross_validation_with_optimization(
         atoms_init=atoms_init,
         db_ase=db_ase,
-        groups=groups,
-        finetune_mlp_fun=finetune_chgnet_train_val,
+        key_groups=key_groups,
+        key_stratify=key_stratify,
+        finetune_mlp_fun=finetune_ocp_train_val,
         calc=calc,
         crossval=crossval,
         kwargs_trainer=kwargs_trainer,
@@ -137,6 +152,12 @@ def main():
         ref_energies_kwargs=ref_energies_kwargs,
         formation_energy_fun=get_formation_energy_adsorbate,
     )
+    
+    # Results database.
+    model_tag = "finetuned" if finetuning is True else "pretrained"
+    db_res_name = f"ZrO2_ocp_{model_tag}.db"
+    keys_store = ["class", "species", "surface", "dopant", "uid"]
+    keys_match = ["uid"]
     
     # Store results into ase database.
     db_ase = connect(name=db_res_name, append=True)

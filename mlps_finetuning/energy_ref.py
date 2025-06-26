@@ -56,22 +56,22 @@ def calculate_energy_corrections(atoms_list: list, calc: Calculator) -> dict:
 # -------------------------------------------------------------------------------------
 
 def get_energy_corrections(
-    db_ref_name: str,
-    yaml_name: str,
+    db_corr_name: str,
+    yaml_corr_name: str,
     calc: Calculator,
 ) -> dict:
-    """Get energy_corr_dict from ase database or yaml file."""
-    if os.path.isfile(yaml_name):
+    """Get energy corrections dictionary from ase database or yaml file."""
+    if os.path.isfile(yaml_corr_name):
         # Read yaml file.
-        with open(yaml_name, 'r') as fileobj:
+        with open(yaml_corr_name, 'r') as fileobj:
             energy_corr_dict = yaml.safe_load(fileobj)
     else:
         # Read dft output files.
         energy_corr_dict = calculate_energy_corrections(
-            atoms_list=read(db_ref_name, index=":"),
+            atoms_list=read(db_corr_name, index=":"),
             calc=calc,
         )
-        with open(yaml_name, 'w') as fileobj:
+        with open(yaml_corr_name, 'w') as fileobj:
             yaml.dump(energy_corr_dict, fileobj)
     return energy_corr_dict
 

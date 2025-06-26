@@ -183,13 +183,47 @@ def get_formation_energy_adsorbate(
     return float(e_form)
 
 # -------------------------------------------------------------------------------------
+# GET CROSSVALIDATOR
+# -------------------------------------------------------------------------------------
+
+def get_crossvalidator(
+    stratified: bool = False,
+    group: bool = False,
+    n_splits: int = 5,
+    random_state: int = None,
+    shuffle: bool = True,
+) -> BaseCrossValidator:
+    """Get Scikit-Learn crossvalidator."""
+    from sklearn.model_selection import (
+        KFold,
+        StratifiedKFold,
+        GroupKFold,
+        StratifiedGroupKFold,
+    )
+    if (stratified, group) == (False, False):
+        crossval_class = KFold
+    elif (stratified, group) == (True, False):
+        crossval_class = StratifiedKFold
+    elif (stratified, group) == (False, True):
+        crossval_class = GroupKFold
+    elif (stratified, group) == (True, True):
+        crossval_class = StratifiedGroupKFold
+    # Return crossvalidator.
+    return crossval_class(
+        n_splits=n_splits,
+        random_state=random_state,
+        shuffle=shuffle
+    )
+
+# -------------------------------------------------------------------------------------
 # CROSS VALIDATION WITH OPTIMIZATION
 # -------------------------------------------------------------------------------------
 
 def cross_validation_with_optimization(
     atoms_init: list,
     db_ase: Database,
-    groups: list,
+    key_groups: str,
+    key_stratify: str,
     finetune_mlp_fun: callable,
     calc: Calculator,
     crossval: BaseCrossValidator,
@@ -201,20 +235,35 @@ def cross_validation_with_optimization(
     formation_energy_fun: callable = None,
     ref_energies_fun: callable = None,
     ref_energies_kwargs: dict = {},
+    required_properties: list = ["energy", "forces"],
 ) -> dict:
     """Run cross-validation with optimization."""
     from sklearn.metrics import mean_absolute_error
     # Get list of all atoms structures from database.
     atoms_all = get_atoms_list_from_db(db_ase)
+    atoms_all = [
+        atoms for atoms in atoms_all
+        if set(required_properties).issubset(atoms.calc.results)
+    ]
     # Loop over splits.
     energy_true = []
     energy_pred = []
     e_form_pred = []
     e_form_true = []
     atoms_pred = []
+    # Get indices, groups, and stratify lists.
     indices = list(range(len(atoms_init)))
+    if key_groups is not None:
+        groups = [atoms.info[key_groups] for atoms in atoms_init]
+    else:
+        groups = None
+    if key_stratify is not None:
+        stratify = [atoms.info[key_stratify] for atoms in atoms_init]
+    else:
+        stratify = None
+    # Cross-validation.
     for ii, (indices_train, indices_test) in enumerate(
-        crossval.split(X=indices, y=groups, groups=groups)
+        crossval.split(X=indices, y=stratify, groups=groups)
     ):
         # Get training and test sets.
         uid_train = [atoms_init[ii].info["uid"] for ii in indices_train]

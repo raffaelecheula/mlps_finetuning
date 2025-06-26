@@ -1,5 +1,7 @@
 # Custom
 wandb/
+finetuning/
+pretrained_models/
 *.tar
 job.err
 job.out
