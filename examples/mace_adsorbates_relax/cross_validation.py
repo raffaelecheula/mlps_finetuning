@@ -5,10 +5,10 @@
 import numpy as np
 from ase.db import connect
 
-from mlps_finetuning.fairchem import (
-    FAIRChemCalculator,
-    pretrained_mlip,
-    finetune_fairchem_train_val,
+from mlps_finetuning.mace import (
+    MACECalculator,
+    mace_mp,
+    finetune_mace_train_val,
 )
 from mlps_finetuning.energy_ref import get_energy_corrections
 from mlps_finetuning.databases import (
@@ -34,7 +34,7 @@ def main():
     key_groups = "dopant" # dopant | species
     key_stratify = "species" # dopant | species
     n_splits = 5 # Number of splits for cross-validation.
-    finetuning = False # Fine-tune the MLP model.
+    finetuning = True # Fine-tune the MLP model.
     kwargs_init = {"index": 0} # {"relaxed": True} or {"index": 0}
     n_gas_added = 0 # Number of times to add gas molecules to training set.
     n_clean_added = 0 # Number of times to add clean surfaces to training set.
@@ -48,16 +48,9 @@ def main():
     calculate_ref_gas = True
 
     # Ase calculator.
-    predict_unit = pretrained_mlip.get_predict_unit(
-        model_name="uma-s-1p1",
-        device="cuda",
-        cache_dir="pretrained_models",
-    )
-    calc = FAIRChemCalculator(
-        predict_unit=predict_unit,
-        task_name="oc20",
-        seed=42,
-    )
+    device = "cuda"
+    model = mace_mp(return_raw_model=True)
+    calc = MACECalculator(models=[model], device=device)
 
     # Ase database.
     db_ase_name = "../ZrO2_dft.db"
@@ -65,24 +58,32 @@ def main():
 
     # Energy corrections database.
     db_corr_name = "../ZrO2_ref.db"
-    yaml_corr_name = "../ZrO2_ref_fairchem.yaml"
+    yaml_corr_name = "../ZrO2_ref_mace.yaml"
 
     # Trainer parameters.
     kwargs_trainer = {
         "directory": "finetuning",
-        "base_model_name": "uma-s-1p1",
-        "dataset_name": "oc20",
-        "regression_tasks": "ef",
-        "timestamp_id": "model_01",
-        "config_dict": {
-            "epochs": 100,
-            "steps": None,
-            "batch_size": 4,
-            "lr": 1e-5,
-            "weight_decay": 1e-5,
-            "evaluate_every_n_steps": 100,
-            "checkpoint_every_n_steps": 1000,
-        },
+        "kwargs_main": {
+            "max_num_epochs": 100,
+            "lr": 1e-4,
+            "batch_size": 8,
+            "num_workers": 4,
+            "name": "model_01",
+            "train_file": "training.xyz",
+            "valid_fraction": 0.1,
+            "multiheads_finetuning": "False",
+            "foundation_model": "medium",
+            "model": "MACE",
+            "num_interactions": 3,
+            "num_channels": 128,
+            "E0s": "average",
+            "max_L": 1,
+            "correlation": 3,
+            "r_max": 5.0,
+            "ema": True,
+            "device": "cuda",
+            "save_cpu": True,
+        }
     }
     
     # Initialize ase database.
@@ -124,9 +125,6 @@ def main():
         calc=calc,
     )
     
-    # Get groups for splits.
-    groups = [atoms.info[key_groups] for atoms in atoms_init]
-    
     # Reference energies parameters.
     ref_energies_kwargs = {
         "references_gas": ["H2", "H2O", "CO2"],
@@ -141,7 +139,7 @@ def main():
         db_ase=db_ase,
         key_groups=key_groups,
         key_stratify=key_stratify,
-        finetune_mlp_fun=finetune_fairchem_train_val,
+        finetune_mlp_fun=finetune_mace_train_val,
         calc=calc,
         crossval=crossval,
         kwargs_trainer=kwargs_trainer,
@@ -156,15 +154,15 @@ def main():
     
     # Results database.
     model_tag = "finetuned" if finetuning is True else "pretrained"
-    db_res_name = f"ZrO2_fairchem_{model_tag}.db"
+    db_res_name = f"ZrO2_mace_{model_tag}.db"
     keys_store = ["class", "species", "surface", "dopant", "uid"]
     keys_match = ["uid"]
     
     # Store results into ase database.
-    db_ase = connect(name=db_res_name, append=True)
+    db_res = connect(name=db_res_name, append=True)
     write_atoms_list_to_db(
         atoms_list=results["atoms_pred"],
-        db_ase=db_ase,
+        db_ase=db_res,
         keys_store=keys_store,
         keys_match=keys_match,
     )

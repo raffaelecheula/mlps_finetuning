@@ -28,7 +28,9 @@ def optimize_atoms(
     steps: int = 500,
     keys_print: list = ["class", "surface", "species"],
 ):
-    """Optimize atoms."""
+    """
+    Optimize atoms.
+    """
     print("Relax: " + " - ".join([atoms.info[key] for key in keys_print]))
     # Relax structure.
     atoms.calc = calc
@@ -61,7 +63,9 @@ def get_reference_energies_adsorbates(
     calculate_ref_clean: bool = True,
     calculate_ref_gas: bool = True,
 ) -> tuple:
-    """Get energy references dictionaries."""
+    """
+    Get energy references dictionaries.
+    """
     # Calculate energy of reference surfaces.
     references_surf = list({atoms.info["surface"]: None for atoms in atoms_list})
     energies_ref = {}
@@ -123,7 +127,9 @@ def print_energies(
     e_form: float = None,
     e_form_dft: float = None,
 ):
-    """Print energies."""
+    """
+    Print energies.
+    """
     print("-"*82)
     print(" | ".join([
         "Energy",
@@ -145,7 +151,9 @@ def print_energies(
 # -------------------------------------------------------------------------------------
 
 def get_elem_energies_ref(atoms_list: list) -> dict:
-    """Get the reference energies of a set of linearly independent species."""
+    """
+    Get the reference energies of a set of linearly independent species.
+    """
     energies = [atoms.get_potential_energy() for atoms in atoms_list]
     formulas = [Formula(atoms.get_chemical_formula()).count() for atoms in atoms_list]
     elements = list({elem: None for form in formulas for elem in form})
@@ -164,7 +172,9 @@ def get_formation_energy_adsorbate(
     energies_ref: dict,
     compositions_ref: dict,
 ) -> float:
-    """Get the formation energy of a structure."""
+    """
+    Get the formation energy of a structure.
+    """
     composition = Formula(atoms.get_chemical_formula()).count()
     composition_ref = compositions_ref[atoms.info["surface"]]
     elements = {elem: None for elem in composition}
@@ -193,7 +203,9 @@ def get_crossvalidator(
     random_state: int = None,
     shuffle: bool = True,
 ) -> BaseCrossValidator:
-    """Get Scikit-Learn crossvalidator."""
+    """
+    Get Scikit-Learn crossvalidator.
+    """
     from sklearn.model_selection import (
         KFold,
         StratifiedKFold,
@@ -237,7 +249,9 @@ def cross_validation_with_optimization(
     ref_energies_kwargs: dict = {},
     required_properties: list = ["energy", "forces"],
 ) -> dict:
-    """Run cross-validation with optimization."""
+    """
+    Run cross-validation with optimization.
+    """
     from sklearn.metrics import mean_absolute_error
     # Get list of all atoms structures from database.
     atoms_all = get_atoms_list_from_db(db_ase)

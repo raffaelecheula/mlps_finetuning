@@ -26,7 +26,7 @@ def main():
     selection = "class=reactions"
 
     # Initialize ase database.
-    db_ase = connect(name="ZrO2_dft_backup.db")
+    db_ase = connect(name="ZrO2_dft.db")
 
     # Print number of selected atoms.
     selected = list(db_ase.select(selection=selection))

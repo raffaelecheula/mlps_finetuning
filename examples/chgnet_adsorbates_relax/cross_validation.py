@@ -33,7 +33,7 @@ def main():
     key_groups = "dopant" # dopant | species
     key_stratify = "species" # dopant | species
     n_splits = 5 # Number of splits for cross-validation.
-    finetuning = False # Fine-tune the MLP model.
+    finetuning = True # Fine-tune the MLP model.
     kwargs_init = {"index": 0} # {"relaxed": True} or {"index": 0}
     n_gas_added = 0 # Number of times to add gas molecules to training set.
     n_clean_added = 0 # Number of times to add clean surfaces to training set.
@@ -60,15 +60,15 @@ def main():
 
     # Trainer parameters.
     kwargs_trainer = {
-        "targets": "ef",
+        "learning_rate": 1e-4,
+        "epochs": 100,
         "batch_size": 8,
+        "targets": "ef",
         "train_ratio": 0.90,
         "val_ratio": 0.10,
         "optimizer": "Adam",
         "scheduler": "CosLR",
         "criterion": "MSE",
-        "epochs": 100,
-        "learning_rate": 1e-5,
         "use_device": use_device,
         "print_freq": 10,
         "wandb_path": "chgnet/crossval-adsorbates",
@@ -85,8 +85,7 @@ def main():
             atoms for atoms in atoms_init if atoms.info["dopant"] in active_dopants
         ]
     if exclude_physisorbed is True:
-        species_dict = {}
-        excluded = ['17_CH2O+OH+H', '19_CH2O+H2O', '23_CH2O+2H', '18_CH2O+OH+H_2']
+        excluded = ["17_CH2O+OH+H", "19_CH2O+H2O", "23_CH2O+2H", "18_CH2O+OH+H_2"]
         atoms_init = [
             atoms for atoms in atoms_init if atoms.info["species"] not in excluded
         ]

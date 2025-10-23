@@ -68,23 +68,35 @@ def main():
         read_fun=read_fun,
         add_info={"class": "H2-structures"},
     )
-    # Get transiton states structures.
-    atoms_transtates = get_atoms_from_nested_dirs(
+    # Get adsorbates and transition states structures.
+    atoms_mechanism = get_atoms_from_nested_dirs(
         basedir=basedir+"ReactionPaths",
         tree_keys=["dopant", "class", "species"],
         filename="pw_tot.pwo",
         index=index,
         read_fun=read_fun,
-        add_info={"image": "TS"},
+        add_info={},
     )
-    # Get initial and final states structures.
-    atoms_images = get_atoms_from_nested_dirs(
+    for atoms in atoms_mechanism:
+        if atoms.info["class"] == "reactions":
+            atoms.info["image"] = "TS"
+    # Get initial states structures.
+    atoms_first = get_atoms_from_nested_dirs(
         basedir=basedir+"ReactionPaths",
-        tree_keys=["dopant", "class", "species", "image"],
-        filename="pw.pwo",
+        tree_keys=["dopant", "class", "species"],
+        filename="first/pw.pwo",
         index=index,
         read_fun=read_fun,
-        add_info={},
+        add_info={"image": "first"},
+    )
+    # Get final states structures.
+    atoms_last = get_atoms_from_nested_dirs(
+        basedir=basedir+"ReactionPaths",
+        tree_keys=["dopant", "class", "species"],
+        filename="last/pw.pwo",
+        index=index,
+        read_fun=read_fun,
+        add_info={"image": "last"},
     )
     # Merge all atoms lists.
     atoms_list = (
@@ -92,21 +104,22 @@ def main():
         atoms_bulks +
         atoms_surfaces +
         atoms_hydrogen +
-        atoms_transtates +
-        atoms_images
+        atoms_mechanism +
+        atoms_first +
+        atoms_last
     )
     
     # Update information on dopant charges.
     dopant_charges_dict = {
-        'Cd': 'Cd2+',
-        'Ce': 'Ce4+',
-        'Ga': 'Ga3+',
-        'In': 'In3+',
-        'Zn': 'Zn2+',
-        'Al': 'Al3+',
-        'Mg': 'Mg2+',
-        'Zr': 'Zr4+',
-        'Ti': 'Ti4+',
+        "Cd": "Cd2+",
+        "Ce": "Ce4+",
+        "Ga": "Ga3+",
+        "In": "In3+",
+        "Zn": "Zn2+",
+        "Al": "Al3+",
+        "Mg": "Mg2+",
+        "Zr": "Zr4+",
+        "Ti": "Ti4+",
     }
     for atoms in atoms_list:
         if atoms.info["dopant"] in dopant_charges_dict:

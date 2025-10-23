@@ -5,7 +5,7 @@
 import numpy as np
 from torch.utils.data import DataLoader
 from ase.calculators.calculator import Calculator
-from sklearn.model_selection import BaseCrossValidator, KFold
+from sklearn.model_selection import BaseCrossValidator
 from pymatgen.io.ase import AseAtomsAdaptor
 from chgnet.model import CHGNet
 from chgnet.trainer import Trainer
@@ -19,7 +19,7 @@ from mlps_finetuning.energy_ref import get_corrected_energy
 # -------------------------------------------------------------------------------------
 
 class CHGNetCalculator(CHGNetCalculatorOriginal):
-        
+
     def __init__(
         self,
         **kwargs,
@@ -27,6 +27,7 @@ class CHGNetCalculator(CHGNetCalculatorOriginal):
         super().__init__(**kwargs)
         # Counter to keep track of the number of single-point evaluations.
         self.counter = 0
+        self.info = {}
     
     def calculate(self, atoms, properties, system_changes):
         super().calculate(atoms, properties, system_changes)
@@ -41,7 +42,9 @@ def atoms_list_to_dataset(
     energy_corr_dict: dict = None,
     targets: str = "efms",
 ) -> Dataset:
-    """Convert list of ase Atoms objects into StructureData dataset."""
+    """
+    Convert list of ase Atoms objects into StructureData dataset.
+    """
     structure_list = []
     energy_list = []
     forces_list = []
@@ -125,7 +128,9 @@ def finetune_chgnet(
     save_dir: str = None,
     train_composition_model: bool = False,
 ) -> Trainer:
-    """Finetune CHGNet model."""
+    """
+    Finetune CHGNet model.
+    """
     # Load pretrained CHGNet model.
     model = CHGNet.load()
     # Define Trainer.
@@ -175,8 +180,11 @@ def finetune_chgnet_train_val(
     save_dir: str = None,
     train_composition_model: bool = False,
     return_calculator: bool = True,
+    kwargs_calc: dict = {"use_device": None},
 ):
-    """Finetune CHGNet model from ase Atoms data."""
+    """
+    Finetune CHGNet model from ase Atoms data.
+    """
     # Build dataset from atoms_list.
     dataset = atoms_list_to_dataset(
         atoms_list=atoms_list,
@@ -213,7 +221,7 @@ def finetune_chgnet_train_val(
     # Return calculator.
     if return_calculator:
         model = trainer.get_best_model()
-        return CHGNetCalculator(use_device=use_device, model=model)
+        return CHGNetCalculator(model=model, **kwargs_calc)
     else:
         return trainer
 
@@ -231,7 +239,9 @@ def get_train_val_test_loader_from_indices(
     num_workers: int = 0,
     pin_memory: bool = True,
 ) -> tuple:
-    """Partition a dataset into train, val, test loaders according to indices."""
+    """
+    Partition a dataset into train, val, test loaders according to indices.
+    """
     from torch.utils.data import DataLoader
     from torch.utils.data.sampler import SubsetRandomSampler
     from chgnet.data.dataset import collate_graphs
@@ -286,7 +296,9 @@ def finetune_chgnet_crossval(
     save_dir: str = None,
     train_composition_model: bool = False,
 ):
-    """Finetune CHGNet model using cross-validation on ASE Atoms data."""
+    """
+    Finetune CHGNet model using cross-validation on ASE Atoms data.
+    """
     # Convert atoms_list into a dataset.
     dataset = atoms_list_to_dataset(
         atoms_list=atoms_list,

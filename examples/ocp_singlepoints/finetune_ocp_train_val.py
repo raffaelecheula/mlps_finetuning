@@ -34,7 +34,7 @@ def main():
     #model_name = "EquiformerV2-31M-S2EF-OC20-All+MD"
     #model_name = "EquiformerV2-lE4-lF100-S2EFS-OC22"
     #model_name = "eSCN-L6-M3-Lay20-S2EF-OC20-All+MD"
-    local_cache = "pretrained_models"
+    local_cache = "../pretrained_models"
     
     # Ase calculator.
     calc = OCPCalculator(

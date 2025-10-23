@@ -4,6 +4,7 @@
 
 import os
 import numpy as np
+from copy import deepcopy
 from tqdm import tqdm
 from ase import Atoms
 from ase.db.core import Database
@@ -15,7 +16,9 @@ from ase.db import connect
 # -------------------------------------------------------------------------------------
 
 def get_paths_with_parents(basedir: str, depth: int) -> list:
-    """Get paths with parents, at given depth."""
+    """
+    Get paths with parents, at given depth.
+    """
     cwd = os.getcwd()
     os.chdir(basedir)
     path_list = [[os.getcwd(), []]]
@@ -42,7 +45,9 @@ def read_atoms_list(
     index: int,
     read_fun: callable = lambda filepath, index: read(filepath, index=index),
 ) -> list:
-    """Read ase Atoms from file and return a list."""
+    """
+    Read ase Atoms from file and return a list.
+    """
     atoms_list = read_fun(filepath, index=index)
     atoms_list = atoms_list if isinstance(atoms_list, list) else [atoms_list]
     return atoms_list
@@ -52,7 +57,9 @@ def read_atoms_list(
 # -------------------------------------------------------------------------------------
 
 def store_index_in_info(atoms_list: list):
-    """Store index in atoms.info dictionary."""
+    """
+    Store index in atoms.info dictionary.
+    """
     for ii, atoms in enumerate(atoms_list):
         atoms.info["index"] = ii
         atoms.info["relaxed"] = False
@@ -64,7 +71,9 @@ def store_index_in_info(atoms_list: list):
 # -------------------------------------------------------------------------------------
 
 def store_uid_in_info(atoms_list: list):
-    """Store id in atoms.info dictionary."""
+    """
+    Store id in atoms.info dictionary.
+    """
     import secrets
     identifier = secrets.token_urlsafe(8)
     for atoms in atoms_list:
@@ -84,7 +93,8 @@ def get_atoms_from_nested_dirs(
     store_index: bool = True,
     store_uid: bool = True,
 ) -> list:
-    """Get list of ase Atoms structures from nested directories.
+    """
+    Get list of ase Atoms structures from nested directories.
     Works with a path tree structured as: basedir/arg[0]/.../arg[N]/filename.
     The atoms.info will have {tree_keys[0]: arg[0], ..., tree_keys[N]: arg[N]}.
     """
@@ -95,7 +105,7 @@ def get_atoms_from_nested_dirs(
         depth=len(tree_keys),
     )
     atoms_all = []
-    for path, parents in tqdm(paths_with_parents):
+    for path, parents in tqdm(paths_with_parents, desc="Reading "+basedir, ncols=120):
         filepath = os.path.join(basedir, path, filename)
         if os.path.isfile(filepath):
             atoms_list = read_atoms_list(
@@ -103,6 +113,8 @@ def get_atoms_from_nested_dirs(
                 index=index,
                 read_fun=read_fun,
             )
+            if atoms_list == [None]:
+                continue
             if store_index is True:
                 store_index_in_info(atoms_list=atoms_list)
             if store_uid is True:
@@ -126,7 +138,9 @@ def get_atoms_from_os_walk(
     read_fun: callable = None,
     store_index: bool = True,
 ) -> list:
-    """Get list of ase Atoms structures from nested directories with os walk."""
+    """
+    Get list of ase Atoms structures from nested directories with os walk.
+    """
     atoms_all = []
     for basedir in basedirs:
         for path, folders, files in os.walk(basedir):
@@ -153,9 +167,13 @@ def write_atoms_list_to_db(
     keys_match: list = None,
     fill_stress: bool = False,
     fill_magmom: bool = False,
+    copy_atoms: bool = False,
+    no_constraints: bool = False,
 ):
-    """Write list of ase Atoms to ase database."""
-    for atoms in tqdm(atoms_list):
+    """
+    Write list of ase Atoms to ase database.
+    """
+    for atoms in tqdm(atoms_list, desc="Writing atoms to ASE DB", ncols=120):
         write_atoms_to_db(
             atoms=atoms,
             db_ase=db_ase,
@@ -163,6 +181,8 @@ def write_atoms_list_to_db(
             keys_match=keys_match,
             fill_stress=fill_stress,
             fill_magmom=fill_magmom,
+            copy_atoms=copy_atoms,
+            no_constraints=no_constraints,
         )
 
 # -------------------------------------------------------------------------------------
@@ -176,15 +196,28 @@ def write_atoms_to_db(
     keys_match: list = None,
     fill_stress: bool = False,
     fill_magmom: bool = False,
+    no_constraints: bool = False,
+    **kwargs: dict,
 ):
-    """Write atoms to ase database."""
+    """
+    Write atoms to ase database.
+    """
+    # Copy atoms.
+    calc = deepcopy(atoms.calc)
+    atoms = deepcopy(atoms)
+    atoms.calc = calc
     # Fill with zeros stress and magmoms.
     if fill_stress and "stress" not in atoms.calc.results:
         atoms.calc.results["stress"] = np.zeros(6)
     if fill_magmom and "magmoms" not in atoms.calc.results:
         atoms.calc.results["magmoms"] = np.zeros(len(atoms))
+    # Remove contraints for MLP fine-tuning from DFT calculations.
+    if no_constraints is True:
+        atoms.constraints = []
+        atoms.calc.atoms = atoms
     # Get dictionary to store atoms.info into the columns of the db.
     kwargs_store = {key: atoms.info[key] for key in keys_store}
+    kwargs_store.update(**kwargs)
     # Get dictionary to check if structure is already in db.
     if keys_match is not None:
         kwargs_match = {key: atoms.info[key] for key in keys_match}
@@ -206,7 +239,9 @@ def get_atoms_list_from_db(
     selection: str = "",
     **kwargs,
 ) -> list:
-    """Get list of ase Atoms from ase database."""
+    """
+    Get list of ase Atoms from ase database.
+    """
     atoms_list = []
     for id in [aa.id for aa in db_ase.select(selection=selection, **kwargs)]:
         atoms_row = db_ase.get(id=id)
@@ -226,11 +261,13 @@ def get_atoms_from_db(
     none_ok: bool = False,
     **kwargs,
 ) -> Atoms:
-    """Get ase Atoms from ase database."""
+    """
+    Get ase Atoms from ase database.
+    """
     atoms_list = get_atoms_list_from_db(db_ase=db_ase, selection=selection, **kwargs)
-    if none_ok is True and len(atoms_list) < 1:
-        return None
-    elif len(atoms_list) < 1:
+    if len(atoms_list) < 1:
+        if none_ok is True:
+            return None
         raise RuntimeError("No atoms structure found in database.")
     elif len(atoms_list) > 1:
         raise RuntimeError("More than one atoms structure found in database.")

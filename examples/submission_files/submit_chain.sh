@@ -3,7 +3,7 @@
 # Number of jobs to submit
 NUM_JOBS=5
 # Job script name.
-JOB_SCRIPT="login_qa100.sh"
+JOB_SCRIPT="login_ql40s.sh"
 # Check if the script exists.
 if [[ ! -f $JOB_SCRIPT ]]; then
     echo "Error: $JOB_SCRIPT not found!"

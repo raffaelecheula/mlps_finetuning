@@ -48,7 +48,7 @@ def main():
 
     # Ase calculator.
     model_name = "GemNet-OC-S2EFS-OC20+OC22"
-    local_cache = "pretrained_models"
+    local_cache = "../pretrained_models"
     calc = OCPCalculator(
         model_name=model_name,
         local_cache=local_cache,
@@ -71,7 +71,7 @@ def main():
             "gpus": 1,
             "optim.eval_every": 10,
             "optim.max_epochs": 100,
-            "optim.lr_initial": 1e-5,
+            "optim.lr_initial": 1e-4,
             "optim.batch_size": 4,
             "optim.num_workers": 4,
             "logger": "tensorboard",
@@ -93,8 +93,7 @@ def main():
             atoms for atoms in atoms_init if atoms.info["dopant"] in active_dopants
         ]
     if exclude_physisorbed is True:
-        species_dict = {}
-        excluded = ['17_CH2O+OH+H', '19_CH2O+H2O', '23_CH2O+2H', '18_CH2O+OH+H_2']
+        excluded = ["17_CH2O+OH+H", "19_CH2O+H2O", "23_CH2O+2H", "18_CH2O+OH+H_2"]
         atoms_init = [
             atoms for atoms in atoms_init if atoms.info["species"] not in excluded
         ]

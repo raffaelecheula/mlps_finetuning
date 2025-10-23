@@ -29,6 +29,7 @@ class FAIRChemCalculator(FAIRChemCalculatorOriginal):
         self.adjust_sum_force = adjust_sum_force
         # Counter to keep track of the number of single-point evaluations.
         self.counter = 0
+        self.info = {}
     
     def calculate(self, atoms, properties, system_changes):
         super().calculate(atoms, properties, system_changes)
@@ -51,17 +52,20 @@ def fairchem_root():
 # -------------------------------------------------------------------------------------
 
 def create_config_yaml_files(
-    db_train_path: str,
-    db_val_path: str,
-    normalizer_rmsd: float,
-    elem_refs: list,
     directory: str,
-    base_model_name: str,
     dataset_name: str,
     regression_tasks: str,
-    run_dir: str,
-    timestamp_id: str,
     config_dict: dict,
+    db_train_path: str,
+    db_val_path: str,
+    base_model_name: str,
+    checkpoint_path: str = None,
+    label: str = None,
+    energy_coeff: float = None,
+    forces_coeff: float = None,
+    stress_coeff: float = None,
+    normalizer_rmsd: float = 1.0,
+    elem_refs: list = [0.] * 100,
     filename: str = "uma_sm_finetune.yaml",
 ):
     """
@@ -75,18 +79,24 @@ def create_config_yaml_files(
     }
     # Fine-tuning and task template files.
     templates_dir = fairchem_root() / Path("configs/uma/finetune")
-    filename_finetune = Path("uma_sm_finetune_template.yaml")
+    filename_yaml = Path("uma_sm_finetune_template.yaml")
     filename_task = Path("data") / task_yaml_dict[regression_tasks]
     # Update fine-tuning file.
-    with open(templates_dir / filename_finetune) as fileobj:
-        config_finetune = yaml.safe_load(fileobj)
-        config_finetune["base_model_name"] = str(base_model_name)
-        config_finetune["defaults"][0]["data"] = str(filename_task.stem)
-        config_finetune["job"]["run_dir"] = str(run_dir)
-        config_finetune["job"]["timestamp_id"] = timestamp_id
-    config_finetune.update(config_dict)
+    with open(templates_dir / filename_yaml) as fileobj:
+        config = yaml.safe_load(fileobj)
+        config["base_model_name"] = str(base_model_name)
+        config["defaults"][0]["data"] = str(filename_task.stem)
+        config["job"]["run_dir"] = str(directory)
+        if label is not None:
+            config["job"]["timestamp_id"] = label
+        if checkpoint_path is not None:
+            config["runner"]["train_eval_unit"]["model"]["checkpoint_location"] = (
+                checkpoint_path
+            )
+            del config["base_model_name"]
+    config.update(config_dict)
     with open(Path(directory) / filename, "w") as fileobj:
-        yaml.dump(config_finetune, fileobj, default_flow_style=False, sort_keys=False)
+        yaml.dump(config, fileobj, default_flow_style=False, sort_keys=False)
     # Update task yaml file.
     with open(templates_dir / filename_task) as fileobj:
         config_task = yaml.safe_load(fileobj)
@@ -95,6 +105,12 @@ def create_config_yaml_files(
         config_task["elem_refs"] = list(elem_refs)
         config_task["train_dataset"]["splits"]["train"]["src"] = str(db_train_path)
         config_task["val_dataset"]["splits"]["val"]["src"] = str(db_val_path)
+        if energy_coeff is not None:
+            config_task["tasks_list"][0]["loss_fn"]["coefficient"] = energy_coeff
+        if forces_coeff is not None:
+            config_task["tasks_list"][1]["loss_fn"]["coefficient"] = forces_coeff
+        if stress_coeff is not None:
+            config_task["tasks_list"][2]["loss_fn"]["coefficient"] = stress_coeff
     os.makedirs(directory / Path("data"), exist_ok=True)
     with open(Path(directory) / filename_task, "w") as fileobj:
         yaml.dump(config_task, fileobj, default_flow_style=False, sort_keys=False)
@@ -106,41 +122,54 @@ def create_config_yaml_files(
 # -------------------------------------------------------------------------------------
 
 def finetune_fairchem(
-    config_dict: dict = {},
     directory: str = "finetuning",
-    base_model_name: str = "uma-s-1",
     dataset_name: str = "oc20",
     regression_tasks: str = "ef",
-    timestamp_id: str = "model",
+    config_dict = {},
     db_train_path: str = "finetuning/train/train.db",
     db_val_path: str = "finetuning/val/val.db",
+    base_model_name: str = "uma-s-1p1",
+    checkpoint_path: str = None,
+    label: str = "model_01",
+    energy_coeff: float = None,
+    forces_coeff: float = None,
+    stress_coeff: float = None,
+    normalizer_rmsd: float = 1.0,
+    elem_refs: list = [0.] * 100,
+    compute_references: bool = False,
     num_workers: int = 1,
 ):
-    """Finetune FairChem model."""
+    """
+    Finetune FairChem model.
+    """
     from fairchem.core._cli import main as fairchem_main
-    #from fairchem.core.scripts.create_finetune_dataset import (
-    #    compute_normalizer_and_linear_reference,
-    #)
-    # Launch processing for training data.
-    #normalizer_rmsd, elem_refs = compute_normalizer_and_linear_reference(
-    #    train_path=db_train_path,
-    #    num_workers=num_workers,
-    #)
-    normalizer_rmsd = 1.0
-    elem_refs = [0.] * 100
+    from hydra.core.global_hydra import GlobalHydra
+    GlobalHydra.instance().clear()
+    # Process training data.
+    if compute_references is True:
+        from fairchem.core.scripts.create_finetune_dataset import (
+            compute_normalizer_and_linear_reference,
+        )
+        normalizer_rmsd, elem_refs = compute_normalizer_and_linear_reference(
+            train_path=db_train_path,
+            num_workers=num_workers,
+        )
     # Create yaml file.
     config = create_config_yaml_files(
-        db_train_path=db_train_path,
-        db_val_path=db_val_path,
-        normalizer_rmsd=normalizer_rmsd,
-        elem_refs=elem_refs,
         directory=directory,
-        base_model_name=base_model_name,
         dataset_name=dataset_name,
         regression_tasks=regression_tasks,
-        run_dir=directory,
-        timestamp_id=timestamp_id,
         config_dict=config_dict,
+        db_train_path=db_train_path,
+        db_val_path=db_val_path,
+        base_model_name=base_model_name,
+        checkpoint_path=checkpoint_path,
+        label=label,
+        energy_coeff=energy_coeff,
+        forces_coeff=forces_coeff,
+        stress_coeff=stress_coeff,
+        normalizer_rmsd=normalizer_rmsd,
+        elem_refs=elem_refs,
     )
     # Create training arguments container.
     @dataclass
@@ -149,9 +178,9 @@ def finetune_fairchem(
     args = FinetuningArgs(config=config)
     # Run the finetuning.
     fairchem_main(args=args, override_args=[])
-    ## Return path of best checkpoint.
+    # Return path of best checkpoint.
     checkpoint_path = os.path.join(
-        directory, timestamp_id, "checkpoints", "final", "inference_ckpt.pt",
+        directory, label, "checkpoints", "final", "inference_ckpt.pt",
     )
     return checkpoint_path
 
@@ -168,7 +197,9 @@ def prepare_train_val_dbs(
     seed: int = 42,
     energy_corr_dict: dict = None,
 ):
-    """Split an ase database into train, test and validation ase databases."""
+    """
+    Split an ase database into train, test and validation ase databases.
+    """
     from ase.db import connect
     tasks = ["train", "val", "test"] if use_test_set is True else ["train", "val"]
     # Shuffle the indices of the atoms.
@@ -222,11 +253,15 @@ def finetune_fairchem_train_val(
     base_model_name: str = "uma-s-1",
     dataset_name: str = "oc20",
     regression_tasks: str = "ef",
-    timestamp_id: str = "model",
+    label: str = "model_00",
     required_properties: list = ["energy", "forces"],
     return_calculator: bool = True,
+    kwargs_calc: dict = {},
+    kwargs_unit: dict = {},
 ):
-    """Finetune FairChem model from ase Atoms data."""
+    """
+    Finetune FairChem model from ase Atoms data.
+    """
     from fairchem.core.units.mlip_unit import load_predict_unit
     # Filter atoms with required properties.
     atoms_list = [
@@ -250,20 +285,21 @@ def finetune_fairchem_train_val(
         base_model_name=base_model_name,
         dataset_name=dataset_name,
         regression_tasks=regression_tasks,
-        timestamp_id=timestamp_id,
+        label=label,
         db_train_path=db_train_path,
         db_val_path=db_val_path,
     )
-    # Return calculator.
+    # Return calculator or checkpoint path.
     if return_calculator:
         predict_unit = load_predict_unit(
             path=checkpoint_path,
-            inference_settings="default",
-            overrides=None,
-            device="cuda",
-            atom_refs=None,
+            **kwargs_unit,
         )
-        return FAIRChemCalculator(predict_unit=predict_unit, task_name=dataset_name)
+        return FAIRChemCalculator(
+            predict_unit=predict_unit,
+            task_name=dataset_name,
+            **kwargs_calc,
+        )
     else:
         return checkpoint_path
 

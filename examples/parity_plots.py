@@ -19,7 +19,7 @@ from mlps_finetuning.utilities import parity_plot
 def main():
 
     # Parameters.
-    model = "chgnet"
+    model = "mace"
     finetuning = False
     
     # Results database.

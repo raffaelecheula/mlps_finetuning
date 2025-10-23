@@ -17,7 +17,9 @@ def optimal_reorder_indices(
     atoms: Atoms,
     atoms_ref: Atoms,
 ) -> list:
-    """Calculate indices to reorder `atoms` to best match `atoms_ref`."""
+    """
+    Calculate indices to reorder `atoms` to best match `atoms_ref`.
+    """
     numbers = np.array([aa.number for aa in atoms])
     numbers_ref = np.array([aa.number for aa in atoms_ref])
     array = np.hstack([atoms.positions, numbers.reshape(-1, 1)])
@@ -38,7 +40,9 @@ def reorder_atoms(
     atoms_ref: Atoms = None,
     indices: list = None,
 ) -> None:
-    """Reorder atoms from `indices` or `atoms_ref`."""
+    """
+    Reorder atoms from `indices` or `atoms_ref`.
+    """
     if indices is None:
         indices = optimal_reorder_indices(atoms=atoms, atoms_ref=atoms_ref)
     # Reorder the atoms.
@@ -57,7 +61,9 @@ def repeat_atoms_with_results(
     atoms: Atoms,
     repetitions: tuple,
 ) -> Atoms:
-    """Repeat `atoms` object multiplying the results by the number of copies."""
+    """
+    Repeat `atoms` object multiplying the results by the number of copies.
+    """
     n_copies = np.prod(repetitions)
     atoms_rep = atoms.copy()
     atoms_rep *= repetitions
@@ -96,7 +102,9 @@ def parity_plot(
     kwargs_errorbar: dict = {},
     kwargs_violin: dict = {},
 ) -> object:
-    """Parity plot of the results."""
+    """
+    Parity plot of the results.
+    """
     if ax is None:
         import matplotlib.pyplot as plt
         fig, ax = plt.subplots(figsize=(6, 6), dpi=300)
@@ -170,7 +178,9 @@ def violin_plot(
     color: str = "crimson",
     show_errors: bool = True,
 ) -> object:
-    """Violin plot of the errors."""
+    """
+    Violin plot of the errors.
+    """
     if ax is None:
         import matplotlib.pyplot as plt
         fig, ax = plt.subplots(figsize=(6, 6), dpi=300)
@@ -209,6 +219,20 @@ def violin_plot(
             },
         )
     return ax
+
+# -------------------------------------------------------------------------------------
+# PRINT TITLE
+# -------------------------------------------------------------------------------------
+
+def print_title(
+    string: str,
+    width: int = 100,
+):
+    """
+    Print title.
+    """
+    for text in ["-" * width, string.center(width), "-" * width]:
+        print("#", text, "#")
 
 # -------------------------------------------------------------------------------------
 # END

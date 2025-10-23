@@ -31,18 +31,22 @@ class OCPCalculator(OCPCalculatorOriginal):
         self.vacuum_ref = vacuum_ref
         # Counter to keep track of the number of single-point evaluations.
         self.counter = 0
+        self.info = {}
     
     def calculate(self, atoms, properties, system_changes):
         try:
             super().calculate(atoms, properties, system_changes)
         except RuntimeError:
+            print("OCPCalculator: adding reference.")
             self.calculate_with_reference(atoms, properties, system_changes)
         if self.adjust_sum_force is True:
             self.results["forces"] -= self.results["forces"].mean(axis=0)
         self.counter += 1
 
     def calculate_with_reference(self, atoms, properties, system_changes):
-        """Calculate results for structure with a reference."""
+        """
+        Calculate results for structure with a reference.
+        """
         # Create a copy of the atoms and add vacuum.
         atoms_copy = atoms.copy()
         atoms_copy.cell[2,2] += 2 * self.vacuum_ref
@@ -74,9 +78,12 @@ def finetune_ocp(
     mode: str = "train",
     config_yaml: str = "config.yaml",
     directory: str = "finetuning",
+    label: str = "model_01",
     **kwargs,
 ):
-    """Finetune OCP model."""
+    """
+    Finetune OCP model.
+    """
     from fairchem.core._cli import main as fairchem_main
     # Default flags.
     flags = {
@@ -89,7 +96,7 @@ def finetune_ocp(
         "print_every": 10,
         "seed": 0,
         "amp": False,
-        "timestamp_id": None,
+        "timestamp_id": label,
         "sweep_yml": None,
         "submit": False,
         "summit": False,
@@ -113,17 +120,20 @@ def finetune_ocp(
     # Run the finetuning.
     fairchem_main(args=args, override_args=[])
     # Return path of best checkpoint.
-    best_checkpoint_path = os.path.join(
-        directory, "checkpoints", flags["timestamp_id"], "best_checkpoint.pt",
+    checkpoint_path = os.path.join(
+        directory, "checkpoints", label, "best_checkpoint.pt",
     )
-    return best_checkpoint_path
+    # Return checkpoint path.
+    return checkpoint_path
 
 # -------------------------------------------------------------------------------------
 # DEFAULT DELETE KEYS
 # -------------------------------------------------------------------------------------
 
 def default_delete_keys():
-    """Default delete keys to remove from config yaml files."""
+    """
+    Default delete keys to remove from config yaml files.
+    """
     delete_keys = [
         "slurm",
         "cmd",
@@ -149,7 +159,9 @@ def update_config_yaml(
     delete_keys: tuple = (),
     update_keys: dict = {},
 ):
-    """Generate a yaml config file from an existing checkpoint file."""
+    """
+    Generate a yaml config file from an existing checkpoint file.
+    """
     # Read config dictionary.
     if config_dict is None:
         import torch
@@ -193,58 +205,6 @@ def update_config_yaml(
     with open(config_yaml, 'w') as fileobj:
         yaml.dump(config_dict, fileobj)
 
-## -------------------------------------------------------------------------------------
-## SPLIT DATABASE
-## -------------------------------------------------------------------------------------
-#
-#def split_database(
-#    db_ase_name: str,
-#    fractions: tuple = (0.8, 0.1, 0.1),
-#    filenames: tuple = ("train.db", "test.db", "val.db"),
-#    directory: str = ".",
-#    seed: int = 42,
-#    energy_corr_dict: dict = None,
-#):
-#    """Split an ase database into train, test and validation ase databases."""
-#    from ase.db import connect
-#    os.makedirs(directory, exist_ok=True)
-#    # Get filenames (and delete them).
-#    db_name_list = []
-#    for name in filenames:
-#        db_name = os.path.join(directory, name)
-#        if os.path.exists(db_name):
-#            os.remove(db_name)
-#        db_name_list.append(db_name)
-#    # Read source database.
-#    db_ase = connect(db_ase_name)
-#    n_data = db_ase.count()
-#    # Set sum of fractions equal to 1 and get numbers of data.
-#    fractions = np.array(fractions)
-#    fractions /= fractions.sum()
-#    n_data_array = np.array(np.round(fractions*n_data), dtype=int)
-#    n_data_array[-1] = n_data-np.sum(n_data_array[:-1])
-#    # Shuffle the database ids.
-#    ids = np.arange(1, n_data+1)
-#    rng = np.random.default_rng(seed=seed)
-#    rng.shuffle(ids)
-#    # Write new databases.
-#    num = 0
-#    for ii, db_name in enumerate(db_name_list):
-#        with connect(db_name) as db_new:
-#            natoms = []
-#            for id in ids[num:num+n_data_array[ii]]:
-#                row = db_ase.get(id=int(id))
-#                atoms = row.toatoms()
-#                if energy_corr_dict is not None:
-#                    atoms.calc.results["energy"] = get_corrected_energy(
-#                        atoms=atoms,
-#                        energy_corr_dict=energy_corr_dict,
-#                    )
-#                db_new.write(atoms)
-#                natoms.append(len(atoms))
-#            db_new.metadata = {"natoms": natoms}
-#        num += n_data_array[ii]
-
 # -------------------------------------------------------------------------------------
 # PREPARE TRAIN VAL DBS
 # -------------------------------------------------------------------------------------
@@ -258,7 +218,9 @@ def prepare_train_val_dbs(
     seed: int = 42,
     energy_corr_dict: dict = None,
 ):
-    """Split an ase database into train, test and validation ase databases."""
+    """
+    Split an ase database into train, test and validation ase databases.
+    """
     from ase.db import connect
     os.makedirs(directory, exist_ok=True)
     # Delete previous datasets.
@@ -310,9 +272,12 @@ def finetune_ocp_train_val(
     energy_corr_dict: dict = None,
     use_test_set: bool = False,
     directory: str = "finetuning",
-    **kwargs,
+    return_calculator: bool = True,
+    kwargs_calc = {"trainer": "ocp", "cpu": False, "seed": 42}
 ):
-    """Finetune OCP model from ase Atoms data."""
+    """
+    Finetune OCP model from ase Atoms data.
+    """
     # Prepare train and val databases.
     prepare_train_val_dbs(
         atoms_list=atoms_list,
@@ -353,12 +318,20 @@ def finetune_ocp_train_val(
         update_keys=update_keys,
     )
     # Run the fine-tuning.
-    finetune_ocp(
+    checkpoint_path = finetune_ocp(
         checkpoint_path=checkpoint_path,
         config_yaml=config_yaml,
         directory=directory,
         **kwargs_main,
     )
+    # Return calculator or checkpoint path.
+    if return_calculator:
+        return OCPCalculator(
+            checkpoint_path=checkpoint_path,
+            **kwargs_calc,
+        )
+    else:
+        return checkpoint_path
 
 # -------------------------------------------------------------------------------------
 # END

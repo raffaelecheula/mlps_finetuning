@@ -15,7 +15,9 @@ from ase.io import read
 # -------------------------------------------------------------------------------------
 
 def get_symbols_dict(atoms: Atoms) -> dict:
-    """Return a dictionary with the counts of elements in the atoms."""
+    """
+    Return a dictionary with the counts of elements in the atoms.
+    """
     symbol_list = atoms.get_chemical_symbols()
     return {
         symbol: int(symbol_list.count(symbol)) for symbol in dict.fromkeys(symbol_list)
@@ -26,7 +28,9 @@ def get_symbols_dict(atoms: Atoms) -> dict:
 # -------------------------------------------------------------------------------------
 
 def calculate_energy_corrections(atoms_list: list, calc: Calculator) -> dict:
-    """Calculate energy correction per atomic species for finetuning of MLPs."""
+    """
+    Calculate energy correction per atomic species for finetuning of MLPs.
+    """
     import pandas as pd
     from sklearn.linear_model import LinearRegression
     # Collect data from atoms_list.
@@ -60,7 +64,9 @@ def get_energy_corrections(
     yaml_corr_name: str,
     calc: Calculator,
 ) -> dict:
-    """Get energy corrections dictionary from ase database or yaml file."""
+    """
+    Get energy corrections dictionary from ase database or yaml file.
+    """
     if os.path.isfile(yaml_corr_name):
         # Read yaml file.
         with open(yaml_corr_name, 'r') as fileobj:
@@ -85,7 +91,9 @@ def get_corrected_energy(
     reverse: bool = False,
     energy: float = None,
 ) -> float:
-    """Get energy of atoms, corrected with energy_corr_dict."""
+    """
+    Get energy of atoms, corrected with energy_corr_dict.
+    """
     if energy is None:
         energy = atoms.get_potential_energy()
     if energy_corr_dict is not None:

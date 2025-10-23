@@ -3,9 +3,9 @@
 #SBATCH --job-name=login
 #SBATCH --partition=qa100
 #SBATCH --nodes=1
-#SBATCH --mem=502G
-#SBATCH --cpus-per-task=64
-#SBATCH --gpus-per-node=2
+#SBATCH --mem=251G
+#SBATCH --cpus-per-task=32
+#SBATCH --gpus-per-node=1
 #SBATCH --time=08:00:00
 #SBATCH --error=job.err
 #SBATCH --output=job.out

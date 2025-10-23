@@ -20,13 +20,13 @@ def main():
     # Initialize ase database.
     db_ase = connect(name=db_ase_name)
     # Get list of initial atoms structures from database.
-    atoms_list = get_atoms_list_from_db(db_ase, selection=selection)[:160]
+    atoms_list = get_atoms_list_from_db(db_ase, selection=selection)
     print(f"Number of structures: {len(atoms_list)}")
 
     # Trainer parameters.
     kwargs_trainer = {
         "directory": "finetuning",
-        "base_model_name": "uma-s-1",
+        "base_model_name": "uma-s-1p1",
         "dataset_name": "oc20",
         "regression_tasks": "ef",
         "timestamp_id": "model_01",
