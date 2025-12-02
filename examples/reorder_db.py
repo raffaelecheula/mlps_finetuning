@@ -20,10 +20,10 @@ def main():
     show_atoms = False
 
     # Copy database.
-    shutil.copy2("ZrO2_dft.db", "ZrO2_dft_ordered.db")
+    shutil.copy2("ZrO2_DFT.db", "ZrO2_DFT_ordered.db")
 
     # Initialize ase database.
-    db_ase = connect(name="ZrO2_dft_ordered.db")
+    db_ase = connect(name="ZrO2_DFT_ordered.db")
 
     # Get list of atoms structures from database.
     selection = "class=adsorbates,index=0"

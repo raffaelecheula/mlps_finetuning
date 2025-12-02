@@ -2,20 +2,17 @@
 # IMPORTS
 # -------------------------------------------------------------------------------------
 
+import os
 import numpy as np
 from ase.db import connect
 
-from mlps_finetuning.fairchem import (
-    FAIRChemCalculator,
-    pretrained_mlip,
-    finetune_fairchem_train_val,
-)
+from mlps_finetuning.fairchem import FAIRChemCalculator, finetune_FAIRChem_model
 from mlps_finetuning.energy_ref import get_energy_corrections
 from mlps_finetuning.databases import (
     get_atoms_list_from_db,
     write_atoms_list_to_db,
 )
-from mlps_finetuning.workflow import (
+from mlps_finetuning.crossvalidations import (
     get_crossvalidator,
     get_reference_energies_adsorbates,
     get_formation_energy_adsorbate,
@@ -28,6 +25,10 @@ from mlps_finetuning.workflow import (
 
 def main():
 
+    # MLP model.
+    calc_name = "FAIRChem"
+    model_name = "uma-s-1p1"
+
     # Cross-validation parameters.
     stratified = True # Stratified cross-validation.
     group = False # Group cross-validation.
@@ -38,6 +39,7 @@ def main():
     kwargs_init = {"index": 0} # {"relaxed": True} or {"index": 0}
     n_gas_added = 0 # Number of times to add gas molecules to training set.
     n_clean_added = 0 # Number of times to add clean surfaces to training set.
+    n_max_train = 1000 # Maximum number of data in training set.
     only_active_dopants = True
     exclude_physisorbed = True
     random_state = 42
@@ -48,41 +50,37 @@ def main():
     calculate_ref_gas = True
 
     # Ase calculator.
-    predict_unit = pretrained_mlip.get_predict_unit(
-        model_name="uma-s-1p1",
-        device="cuda",
-        cache_dir="pretrained_models",
-    )
     calc = FAIRChemCalculator(
-        predict_unit=predict_unit,
+        model_name=model_name,
+        device="cuda",
+        cache_dir=os.getenv("PRETRAINED_MODELS", "."),
         task_name="oc20",
         seed=42,
     )
 
     # Ase database.
-    db_ase_name = "../ZrO2_dft.db"
+    db_ase_name = "../ZrO2_DFT.db"
     selection = "class=adsorbates"
 
     # Energy corrections database.
     db_corr_name = "../ZrO2_ref.db"
-    yaml_corr_name = "../ZrO2_ref_fairchem.yaml"
+    yaml_corr_name = f"../ZrO2_ref_{calc_name}.yaml"
 
     # Trainer parameters.
     kwargs_trainer = {
-        "directory": "finetuning",
-        "base_model_name": "uma-s-1p1",
+        "val_fraction": 0.10,
+        "logfile": "log.txt",
+        "base_model_name": model_name,
         "dataset_name": "oc20",
         "regression_tasks": "ef",
-        "timestamp_id": "model_01",
-        "config_dict": {
-            "epochs": 100,
-            "steps": None,
-            "batch_size": 4,
-            "lr": 1e-5,
-            "weight_decay": 1e-5,
-            "evaluate_every_n_steps": 100,
-            "checkpoint_every_n_steps": 1000,
-        },
+        # kwargs.
+        "epochs": 100,
+        "lr": 1e-4,
+        "steps": None,
+        "batch_size": 4,
+        "weight_decay": 1e-5,
+        "evaluate_every_n_steps": 100,
+        "checkpoint_every_n_steps": 100,
     }
     
     # Initialize ase database.
@@ -141,7 +139,7 @@ def main():
         db_ase=db_ase,
         key_groups=key_groups,
         key_stratify=key_stratify,
-        finetune_mlp_fun=finetune_fairchem_train_val,
+        finetune_MLP_fun=finetune_FAIRChem_model,
         calc=calc,
         crossval=crossval,
         kwargs_trainer=kwargs_trainer,
@@ -156,14 +154,14 @@ def main():
     
     # Results database.
     model_tag = "finetuned" if finetuning is True else "pretrained"
-    db_res_name = f"ZrO2_fairchem_{model_tag}.db"
+    db_res_name = f"ZrO2_{calc_name}_{model_tag}.db"
     keys_store = ["class", "species", "surface", "dopant", "uid"]
     keys_match = ["uid"]
     
     # Store results into ase database.
     db_ase = connect(name=db_res_name, append=True)
     write_atoms_list_to_db(
-        atoms_list=results["atoms_pred"],
+        atoms_list=results["Atoms_list_MLP"],
         db_ase=db_ase,
         keys_store=keys_store,
         keys_match=keys_match,

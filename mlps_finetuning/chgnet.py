@@ -2,6 +2,7 @@
 # IMPORTS
 # -------------------------------------------------------------------------------------
 
+import os
 import numpy as np
 from torch.utils.data import DataLoader
 from ase.calculators.calculator import Calculator
@@ -13,6 +14,7 @@ from chgnet.data.dataset import Dataset, StructureData, get_train_val_test_loade
 from chgnet.model.dynamics import CHGNetCalculator as CHGNetCalculatorOriginal
 
 from mlps_finetuning.energy_ref import get_corrected_energy
+from mlps_finetuning.utilities import RedirectOutput
 
 # -------------------------------------------------------------------------------------
 # CHGNET CALCULATOR
@@ -22,9 +24,14 @@ class CHGNetCalculator(CHGNetCalculatorOriginal):
 
     def __init__(
         self,
-        **kwargs,
+        model: object = None,
+        model_name: str = None,
+        **kwargs: dict,
     ):
-        super().__init__(**kwargs)
+        # Load pretrained model.
+        if model is None and model_name is not None:
+            model = CHGNet.load(model_name=model_name, **kwargs)
+        super().__init__(model=model, **kwargs)
         # Counter to keep track of the number of single-point evaluations.
         self.counter = 0
         self.info = {}
@@ -62,7 +69,13 @@ def atoms_list_to_dataset(
         structure = adaptor.get_structure(atoms)
         # Get energy.
         if "energy" in atoms.calc.results:
-            energy = get_corrected_energy(atoms, energy_corr_dict)/len(atoms)
+            # Apply energy correction.
+            energy_tot = get_corrected_energy(
+                atoms=atoms,
+                energy_corr_dict=energy_corr_dict,
+            )
+            # Get energy per atom.
+            energy = energy_tot / len(atoms)
         elif "e" in targets:
             print("Missing energy in results.")
             continue
@@ -109,13 +122,15 @@ def atoms_list_to_dataset(
     return dataset
 
 # -------------------------------------------------------------------------------------
-# FINETUNE CHGNET
+# TRAIN CHGNET MODEL
 # -------------------------------------------------------------------------------------
 
-def finetune_chgnet(
+def train_CHGNet_model(
     train_loader: DataLoader,
     val_loader: DataLoader,
     test_loader: DataLoader = None,
+    model: object = None,
+    model_name: str = "0.3.0",
     targets: str = "efsm",
     optimizer: str = "Adam",
     scheduler: str = "CosLR",
@@ -124,15 +139,19 @@ def finetune_chgnet(
     learning_rate: float = 1e-4,
     use_device: str = None,
     print_freq: int = 10,
-    wandb_path: str = "chgnet",
+    wandb_path: str = "chgnet/training",
     save_dir: str = None,
+    save_test_result: bool = False,
     train_composition_model: bool = False,
+    logfile: str = None,
+    **kwargs: dict,
 ) -> Trainer:
     """
-    Finetune CHGNet model.
+    Train CHGNet model.
     """
     # Load pretrained CHGNet model.
-    model = CHGNet.load()
+    if model is None and model_name is not None:
+        model = CHGNet.load(model_name=model_name)
     # Define Trainer.
     trainer = Trainer(
         model=model,
@@ -145,30 +164,37 @@ def finetune_chgnet(
         use_device=use_device,
         print_freq=print_freq,
         wandb_path=wandb_path,
+        **kwargs,
     )
-    # Start training.
-    trainer.train(
-        train_loader=train_loader,
-        val_loader=val_loader,
-        test_loader=test_loader,
-        save_dir=save_dir,
-        train_composition_model=train_composition_model,
-    )
+    # Train the model.
+    with RedirectOutput(logfile=logfile):
+        trainer.train(
+            train_loader=train_loader,
+            val_loader=val_loader,
+            test_loader=test_loader,
+            save_dir=save_dir,
+            save_test_result=save_test_result,
+            train_composition_model=train_composition_model,
+        )
     # Return trainer.
     return trainer
 
 # -------------------------------------------------------------------------------------
-# FINETUNE CHGNET TRAIN VAL
+# FINETUNE CHGNET MODEL
 # -------------------------------------------------------------------------------------
 
-def finetune_chgnet_train_val(
+def finetune_CHGNet_model(
     atoms_list: list,
+    calc: Calculator = None,
+    directory: str = "finetuning",
+    label: str = "model_00",
     energy_corr_dict: dict = None,
+    model: object = None,
+    model_name: str = "0.3.0",
     targets: str = "efsm",
     batch_size: int = 8,
-    train_ratio: float = 0.90,
-    val_ratio: float = 0.10,
-    return_test: bool = False,
+    val_fraction: float = 0.1,
+    test_fraction: float = 0.0,
     optimizer: str = "Adam",
     scheduler: str = "CosLR",
     criterion: str = "MSE",
@@ -176,15 +202,20 @@ def finetune_chgnet_train_val(
     learning_rate: float = 1e-4,
     use_device: str = None,
     print_freq: int = 10,
-    wandb_path: str = "chgnet",
+    wandb_path: str = "chgnet/finetuning",
     save_dir: str = None,
+    save_test_result: bool = False,
     train_composition_model: bool = False,
-    return_calculator: bool = True,
-    kwargs_calc: dict = {"use_device": None},
+    logfile: str = None,
+    kwargs_calc: dict = {},
+    **kwargs: dict,
 ):
     """
-    Finetune CHGNet model from ase Atoms data.
+    Fine-tune CHGNet model from ase Atoms data.
     """
+    # Start from the model in the calculator.
+    if calc is not None:
+        model = calc.model
     # Build dataset from atoms_list.
     dataset = atoms_list_to_dataset(
         atoms_list=atoms_list,
@@ -192,17 +223,24 @@ def finetune_chgnet_train_val(
         targets=targets,
     )
     # Split dataset into training, validation, and test sets.
+    train_fraction = 1. - val_fraction - test_fraction
+    return_test = True if test_fraction > 0. else False
     loaders = get_train_val_test_loader(
         dataset=dataset,
         batch_size=batch_size,
-        train_ratio=train_ratio,
-        val_ratio=val_ratio,
+        train_ratio=train_fraction,
+        val_ratio=val_fraction,
         return_test=return_test,
     )
     train_loader, val_loader = loaders[:2]
     test_loader = loaders[2] if return_test else None
-    # Run finetuning.
-    trainer = finetune_chgnet(
+    # Run fine-tuning.
+    trainer = train_CHGNet_model(
+        train_loader=train_loader,
+        val_loader=val_loader,
+        test_loader=test_loader,
+        model=model,
+        model_name=model_name,
         targets=targets,
         optimizer=optimizer,
         scheduler=scheduler,
@@ -212,18 +250,14 @@ def finetune_chgnet_train_val(
         use_device=use_device,
         print_freq=print_freq,
         wandb_path=wandb_path,
-        train_loader=train_loader,
-        val_loader=val_loader,
-        test_loader=test_loader,
-        save_dir=save_dir,
+        save_dir=save_dir or os.path.join(directory, label),
         train_composition_model=train_composition_model,
+        logfile=logfile,
+        **kwargs,
     )
     # Return calculator.
-    if return_calculator:
-        model = trainer.get_best_model()
-        return CHGNetCalculator(model=model, **kwargs_calc)
-    else:
-        return trainer
+    model = trainer.get_best_model()
+    return CHGNetCalculator(model=model, **kwargs_calc)
 
 # -------------------------------------------------------------------------------------
 # GET TRAIN VAL TEST LOADER FROM INDICES
@@ -261,7 +295,7 @@ def get_train_val_test_loader_from_indices(
         num_workers=num_workers,
         pin_memory=pin_memory,
     )
-    if return_test:
+    if return_test is True:
         test_loader = DataLoader(
             dataset=dataset,
             batch_size=batch_size,
@@ -277,7 +311,7 @@ def get_train_val_test_loader_from_indices(
 # FINETUNE CHGNET CROSSVAL
 # -------------------------------------------------------------------------------------
 
-def finetune_chgnet_crossval(
+def finetune_CHGNet_crossval(
     atoms_list: list,
     crossval: BaseCrossValidator,
     key_groups: str = None,
@@ -297,7 +331,7 @@ def finetune_chgnet_crossval(
     train_composition_model: bool = False,
 ):
     """
-    Finetune CHGNet model using cross-validation on ASE Atoms data.
+    Fine-tune CHGNet model using cross-validation on ASE Atoms data.
     """
     # Convert atoms_list into a dataset.
     dataset = atoms_list_to_dataset(
@@ -334,7 +368,7 @@ def finetune_chgnet_crossval(
             return_test=False,
         )
         # Run fine-tuning.
-        trainer = finetune_chgnet(
+        trainer = train_CHGNet_model(
             targets=targets,
             optimizer=optimizer,
             scheduler=scheduler,

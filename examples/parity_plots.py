@@ -19,11 +19,11 @@ from mlps_finetuning.utilities import parity_plot
 def main():
 
     # Parameters.
-    model = "mace"
+    model = "CHGNet" # CHGNet | MACE | OCP | FAIRChem
     finetuning = False
     
     # Results database.
-    directory = f"{model}_adsorbates_relax"
+    directory = f"{model.lower()}_adsorbates_relax"
     model_tag = "finetuned" if finetuning is True else "pretrained"
     db_res_name = f"{directory}/ZrO2_{model}_{model_tag}.db"
     # Initialize ase database.
@@ -33,8 +33,8 @@ def main():
     e_form_true = []
     e_form_pred = []
     for atoms in atoms_list:
-        e_form_true.append(atoms.info["e_form_dft"])
-        e_form_pred.append(atoms.info["e_form"])
+        e_form_true.append(atoms.info["E_form_DFT"])
+        e_form_pred.append(atoms.info["E_form_MLP"])
     # Plot formation energy parity plot.
     os.makedirs(f"{directory}/figures", exist_ok=True)
     ax = parity_plot(
@@ -43,9 +43,9 @@ def main():
         alpha=0.4,
         lims=[-4.0, +2.0],
     )
-    ax.set_xlabel("E form DFT [eV]")
-    ax.set_ylabel("E form MLP [eV]")
-    plt.savefig(f"{directory}/figures/parity_e_form_{model}_{model_tag}.png")
+    ax.set_xlabel("E$_{form}$ DFT [eV]")
+    ax.set_ylabel("E$_{form}$ MLP [eV]")
+    plt.savefig(f"{directory}/figures/parity_E_form_{model}_{model_tag}.png")
     
 # -------------------------------------------------------------------------------------
 # IF NAME MAIN

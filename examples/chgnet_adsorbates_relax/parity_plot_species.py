@@ -46,18 +46,18 @@ def main():
     e_form_all = []
     for species in species_list:
         e_form_list = []
-        e_form_dft_list = []
+        e_form_DFT_list = []
         for dopant in dopants_colors:
             kwargs_match = {"species": species, "dopant": dopant}
             atoms = get_atoms_from_db(db_ase, none_ok=True, **kwargs_match)
             if atoms is None:
                 continue
             e_form = atoms.info["e_form"]
-            e_form_dft = atoms.info["e_form_dft"]
+            e_form_DFT = atoms.info["e_form_DFT"]
             e_form_list.append(e_form)
-            e_form_dft_list.append(e_form_dft)
-        ax.plot(e_form_list, e_form_dft_list, "o", markersize=10, label=species)
-        e_form_all += [e_form, e_form_dft]
+            e_form_DFT_list.append(e_form_DFT)
+        ax.plot(e_form_list, e_form_DFT_list, "o", markersize=10, label=species)
+        e_form_all += [e_form, e_form_DFT]
     e_min = min(e_form_all) - 0.5
     e_max = max(e_form_all) + 0.5
     ax.set_xlim(e_min, e_max)

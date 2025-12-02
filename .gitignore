@@ -2,6 +2,7 @@
 wandb/
 finetuning/
 pretrained_models/
+_other_things_/
 *.tar
 job.err
 job.out

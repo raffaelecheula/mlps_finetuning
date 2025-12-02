@@ -3,23 +3,37 @@
 # -------------------------------------------------------------------------------------
 
 import os
+import shutil
 import numpy as np
-from mace.calculators import mace_anicc, mace_mp, mace_off, mace_omol
+from ase.io import write
+from ase.calculators.calculator import Calculator
 from mace.calculators import MACECalculator as MACECalculatorOriginal
 
 from mlps_finetuning.energy_ref import get_corrected_energy
+from mlps_finetuning.utilities import RedirectOutput
 
 # -------------------------------------------------------------------------------------
-# FAIRCHEM CALCULATOR
+# MACE CALCULATOR
 # -------------------------------------------------------------------------------------
 
 class MACECalculator(MACECalculatorOriginal):
 
     def __init__(
         self,
-        **kwargs,
+        model_name: bool = None,
+        logfile: str = None,
+        **kwargs: dict,
     ):
-        super().__init__(**kwargs)
+        # Load pretrained model.
+        if "models" not in kwargs and "model_paths" not in kwargs:
+            kwargs["models"] = [get_pretrained_mace_model(
+                return_raw_model=True,
+                model_name=model_name,
+                **kwargs,
+            )]
+        # Initialize.
+        with RedirectOutput(logfile=logfile):
+            super().__init__(**kwargs)
         # Counter to keep track of the number of single-point evaluations.
         self.counter = 0
         self.info = {}
@@ -29,59 +43,171 @@ class MACECalculator(MACECalculatorOriginal):
         self.counter += 1
 
 # -------------------------------------------------------------------------------------
-# FINETUNE MACE TRAIN VAL
+# GET PRETRAINED MACE MODEL
 # -------------------------------------------------------------------------------------
 
-def finetune_mace_train_val(
-    atoms_list: list,
-    directory: str = "finetuning",
-    energy_corr_dict: dict = None,
-    kwargs_main: dict = {},
-    return_calculator: bool = True,
-    kwargs_calc: dict = {},
+def get_pretrained_mace_model(
+    model_name: str = None,
+    return_raw_model: bool = False,
+    **kwargs: dict,
 ):
-    """Finetune MACE model from ase Atoms data."""
+    """
+    Get pretrained MACE model.
+    """
+    from mace.calculators.foundations_models import mace_mp_names
+    if model_name == "mace_anicc":
+        from mace.calculators import mace_anicc
+        return mace_anicc(return_raw_model=return_raw_model, **kwargs)
+    elif model_name == "mace_off":
+        from mace.calculators import mace_off
+        return mace_off(return_raw_model=return_raw_model, **kwargs)
+    elif model_name == "mace_omol":
+        from mace.calculators import mace_omol
+        return mace_omol(return_raw_model=return_raw_model, **kwargs)
+    elif model_name in mace_mp_names:
+        from mace.calculators import mace_mp
+        return mace_mp(model=model_name, return_raw_model=return_raw_model, **kwargs)
+    else:
+        raise NameError("Wrong model_name.")
+
+# -------------------------------------------------------------------------------------
+# TRAIN MACE MODEL
+# -------------------------------------------------------------------------------------
+
+def train_MACE_model(
+    label: str,
+    directory: str,
+    logfile: str = None,
+    **kwargs: dict,
+):
+    """
+    Train MACE model.
+    """
     import sys
-    import logging
-    from ase.io import write
+    import warnings
     from mace.cli.run_train import main as mace_main
-    # Set up logging.
-    #logger = logging.getLogger()
-    #if logger.hasHandlers():
-    #    logger.handlers.clear()
-    #logging.basicConfig(level=logging.INFO)
-    # Prepare training file.
-    for ii in range(len(atoms_list)):
-        atoms_list[ii].info["REF_energy"] = get_corrected_energy(
-            atoms=atoms_list[ii],
-            energy_corr_dict=energy_corr_dict,
-        )
-        atoms_list[ii].arrays["REF_forces"] = atoms_list[ii].get_forces()
-    # Change directory and write files.
-    cwd = os.getcwd()
-    os.makedirs(directory, exist_ok=True)
-    os.chdir(directory)
-    write(filename=kwargs_main["train_file"], images=atoms_list)
+    # Suppress warnings.
+    warnings.filterwarnings("ignore", module="torch.jit")
+    # Update kwargs.
+    kwargs["name"] = label
+    kwargs["work_dir"] = directory
     # Set command line arguments.
     argv = [""]
-    for key, arg in kwargs_main.items():
+    for key, arg in kwargs.items():
         if arg is True:
             argv.append(f"--{key}")
         elif arg not in (False, None):
             argv.append(f"--{key}={arg}")
-    print(argv)
-    # Train model.
+    # Train the model.
     sys.argv = argv
-    mace_main()
-    os.chdir(cwd)
-    # Path to checkpoint.
-    model_name = kwargs_main["name"]
-    checkpoint_path = os.path.join(directory, f"{model_name}.model")
+    with RedirectOutput(logfile=logfile):
+        mace_main()
+    # Return checkpoint path.
+    return os.path.join(directory, f"{label}.model")
+
+# -------------------------------------------------------------------------------------
+# FINETUNE MACE MODEL
+# -------------------------------------------------------------------------------------
+
+def finetune_MACE_model(
+    atoms_list: list,
+    calc: Calculator = None,
+    directory: str = "finetuning",
+    label: str = "model_00",
+    val_fraction: float = 0.1,
+    test_fraction: float = 0.0,
+    seed: int = 42,
+    atoms_tasks: list = None,
+    energy_corr_dict: dict = None,
+    kwargs_calc: dict = {},
+    logfile: str = None,
+    **kwargs: dict,
+):
+    """
+    Fine-tune MACE model from ase Atoms data.
+    """
+    # Start from the model in the calculator.
+    if calc is not None and "checkpoint_path" in calc.info:
+        kwargs["restart_latest"] = True
+        checkpoint_path_new = os.path.join(directory, f"{label}.model")
+        if checkpoint_path_new != calc.info["checkpoint_path"]:
+            shutil.copyfile(calc.info["checkpoint_path"], checkpoint_path_new)
+    # Prepare train and test files.
+    file_train_path, file_val_path, file_test_path = prepare_train_val_test_files(
+        atoms_list=atoms_list,
+        directory=directory,
+        test_fraction=test_fraction,
+        seed=seed,
+        atoms_tasks=atoms_tasks,
+        energy_corr_dict=energy_corr_dict,
+    )
+    # Run the fine-tuning.
+    checkpoint_path_new = train_MACE_model(
+        label=label,
+        directory=directory,
+        logfile=logfile,
+        train_file=file_train_path,
+        valid_file=file_val_path,
+        test_file=file_test_path,
+        **kwargs,
+    )
     # Return calculator.
-    if return_calculator:
-        return MACECalculator(model_paths=[checkpoint_path], **kwargs_calc)
-    else:
-        return checkpoint_path
+    calc = MACECalculator(model_paths=[checkpoint_path_new], **kwargs_calc)
+    calc.info["checkpoint_path"] = checkpoint_path_new
+    return calc
+
+# -------------------------------------------------------------------------------------
+# PREPARE TRAIN VAL TEST
+# -------------------------------------------------------------------------------------
+
+def prepare_train_val_test_files(
+    atoms_list: list,
+    directory: str,
+    val_fraction: float = 0.1,
+    test_fraction: float = 0.0,
+    seed: int = 42,
+    atoms_tasks: list = None,
+    energy_corr_dict: dict = None,
+) -> list:
+    """
+    Write the list of atoms into train, val (and test) text files.
+    """
+    # Get tasks and atoms tasks.
+    tasks = ["train", "val", "test"]
+    if atoms_tasks is None:
+        train_fraction = 1. - val_fraction - test_fraction
+        # Shuffle the list of atoms.
+        if train_fraction < 1.:
+            atoms_list = atoms_list[:]
+            rng = np.random.default_rng(seed=seed)
+            rng.shuffle(atoms_list)
+        n_data = len(atoms_list)
+        aa = int(n_data * train_fraction)
+        bb = int(n_data * (train_fraction + val_fraction))
+        atoms_tasks = [atoms_list[:aa], atoms_list[aa:bb], atoms_list[bb:]]
+    # Write to the databases.
+    file_path_list = []
+    for task, atoms_list in zip(tasks, atoms_tasks):
+        # Do not create an empty database.
+        if len(atoms_list) == 0:
+            file_path_list.append(None)
+            continue
+        # Create directory.
+        os.makedirs(directory, exist_ok=True)
+        file_path = os.path.join(directory, f"{task}.xyz")
+        file_path_list.append(file_path)
+        # Prepare database.
+        for atoms in atoms_list:
+            # Apply energy correction.
+            atoms.info["REF_energy"] = get_corrected_energy(
+                atoms=atoms,
+                energy_corr_dict=energy_corr_dict,
+            )
+            atoms.arrays["REF_forces"] = atoms.get_forces()
+        # Write xyz file.
+        write(filename=file_path, images=atoms_list)
+    # Return paths of xyz files.
+    return file_path_list
 
 # -------------------------------------------------------------------------------------
 # END

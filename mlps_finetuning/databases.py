@@ -165,25 +165,35 @@ def write_atoms_list_to_db(
     db_ase: Database,
     keys_store: list = [],
     keys_match: list = None,
+    deepcopy_all: bool = True,
     fill_stress: bool = False,
     fill_magmom: bool = False,
-    copy_atoms: bool = False,
     no_constraints: bool = False,
+    match_kwargs: bool = False,
+    use_tqdm: bool = True,
+    **kwargs: dict,
 ):
     """
     Write list of ase Atoms to ase database.
     """
-    for atoms in tqdm(atoms_list, desc="Writing atoms to ASE DB", ncols=120):
-        write_atoms_to_db(
-            atoms=atoms,
-            db_ase=db_ase,
-            keys_store=keys_store,
-            keys_match=keys_match,
-            fill_stress=fill_stress,
-            fill_magmom=fill_magmom,
-            copy_atoms=copy_atoms,
-            no_constraints=no_constraints,
-        )
+    # Monitor progress with tqdm.
+    if use_tqdm is True:
+        atoms_list = tqdm(atoms_list, desc="Writing atoms to ASE DB", ncols=120)
+    # Write all atoms structures in a single transaction.
+    with db_ase:
+        for atoms in atoms_list:
+            write_atoms_to_db(
+                atoms=atoms,
+                db_ase=db_ase,
+                keys_store=keys_store,
+                keys_match=keys_match,
+                deepcopy_all=deepcopy_all,
+                fill_stress=fill_stress,
+                fill_magmom=fill_magmom,
+                no_constraints=no_constraints,
+                match_kwargs=match_kwargs,
+                **kwargs,
+            )
 
 # -------------------------------------------------------------------------------------
 # WRITE ATOMS TO DB
@@ -194,35 +204,39 @@ def write_atoms_to_db(
     db_ase: Database,
     keys_store: list = [],
     keys_match: list = None,
+    deepcopy_all: bool = True,
     fill_stress: bool = False,
     fill_magmom: bool = False,
     no_constraints: bool = False,
+    match_kwargs: bool = False,
     **kwargs: dict,
 ):
     """
     Write atoms to ase database.
     """
-    # Copy atoms.
-    calc = deepcopy(atoms.calc)
-    atoms = deepcopy(atoms)
-    atoms.calc = calc
+    # Deep copy atoms and calculator.
+    if deepcopy_all is True:
+        calc = deepcopy(atoms.calc)
+        atoms = deepcopy(atoms)
+        atoms.calc = calc
     # Fill with zeros stress and magmoms.
     if fill_stress and "stress" not in atoms.calc.results:
         atoms.calc.results["stress"] = np.zeros(6)
     if fill_magmom and "magmoms" not in atoms.calc.results:
         atoms.calc.results["magmoms"] = np.zeros(len(atoms))
-    # Remove contraints for MLP fine-tuning from DFT calculations.
+    # Remove contraints.
     if no_constraints is True:
         atoms.constraints = []
         atoms.calc.atoms = atoms
     # Get dictionary to store atoms.info into the columns of the db.
-    kwargs_store = {key: atoms.info[key] for key in keys_store}
+    kwargs_store = {key: atoms.info[key] for key in keys_store} if keys_store else {}
     kwargs_store.update(**kwargs)
     # Get dictionary to check if structure is already in db.
-    if keys_match is not None:
-        kwargs_match = {key: atoms.info[key] for key in keys_match}
+    kwargs_match = {key: atoms.info[key] for key in keys_match} if keys_match else {}
+    if match_kwargs is True:
+        kwargs_match.update(**kwargs)
     # Write structure to db.
-    if keys_match is None or db_ase.count(**kwargs_match) == 0:
+    if not kwargs_match or db_ase.count(**kwargs_match) == 0:
         db_ase.write(atoms=atoms, data=atoms.info, **kwargs_store)
     elif db_ase.count(**kwargs_match) == 1:
         row_id = db_ase.get(**kwargs_match).id

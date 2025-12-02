@@ -2,20 +2,17 @@
 # IMPORTS
 # -------------------------------------------------------------------------------------
 
+import os
 import numpy as np
 from ase.db import connect
 
-from mlps_finetuning.mace import (
-    MACECalculator,
-    mace_mp,
-    finetune_mace_train_val,
-)
+from mlps_finetuning.mace import MACECalculator, finetune_MACE_model
 from mlps_finetuning.energy_ref import get_energy_corrections
 from mlps_finetuning.databases import (
     get_atoms_list_from_db,
     write_atoms_list_to_db,
 )
-from mlps_finetuning.workflow import (
+from mlps_finetuning.crossvalidations import (
     get_crossvalidator,
     get_reference_energies_adsorbates,
     get_formation_energy_adsorbate,
@@ -28,16 +25,21 @@ from mlps_finetuning.workflow import (
 
 def main():
 
+    # MLP model.
+    calc_name = "MACE"
+    model_name = "medium-mpa-0"
+
     # Cross-validation parameters.
     stratified = True # Stratified cross-validation.
     group = False # Group cross-validation.
     key_groups = "dopant" # dopant | species
     key_stratify = "species" # dopant | species
     n_splits = 5 # Number of splits for cross-validation.
-    finetuning = True # Fine-tune the MLP model.
+    finetuning = False # Fine-tune the MLP model.
     kwargs_init = {"index": 0} # {"relaxed": True} or {"index": 0}
     n_gas_added = 0 # Number of times to add gas molecules to training set.
     n_clean_added = 0 # Number of times to add clean surfaces to training set.
+    n_max_train = 1000 # Maximum number of data in training set.
     only_active_dopants = True
     exclude_physisorbed = True
     random_state = 42
@@ -48,9 +50,7 @@ def main():
     calculate_ref_gas = True
 
     # Ase calculator.
-    device = "cuda"
-    model = mace_mp(return_raw_model=True)
-    calc = MACECalculator(models=[model], device=device)
+    calc = MACECalculator(model_name=model_name)
 
     # Ase database.
     db_ase_name = "../ZrO2_dft.db"
@@ -58,32 +58,29 @@ def main():
 
     # Energy corrections database.
     db_corr_name = "../ZrO2_ref.db"
-    yaml_corr_name = "../ZrO2_ref_mace.yaml"
+    yaml_corr_name = f"../ZrO2_ref_{calc_name}.yaml"
 
     # Trainer parameters.
     kwargs_trainer = {
-        "directory": "finetuning",
-        "kwargs_main": {
-            "max_num_epochs": 100,
-            "lr": 1e-4,
-            "batch_size": 8,
-            "num_workers": 4,
-            "name": "model_01",
-            "train_file": "training.xyz",
-            "valid_fraction": 0.1,
-            "multiheads_finetuning": "False",
-            "foundation_model": "medium",
-            "model": "MACE",
-            "num_interactions": 3,
-            "num_channels": 128,
-            "E0s": "average",
-            "max_L": 1,
-            "correlation": 3,
-            "r_max": 5.0,
-            "ema": True,
-            "device": "cuda",
-            "save_cpu": True,
-        }
+        "val_fraction": 0.1,
+        "logfile": "log.txt",
+        # kwargs.
+        "max_num_epochs": 100,
+        "lr": 1e-4,
+        "batch_size": 4,
+        "num_workers": 4,
+        "multiheads_finetuning": "False",
+        "foundation_model": model_name,
+        "model": "MACE",
+        "num_interactions": 3,
+        "num_channels": 128,
+        "E0s": "average",
+        "max_L": 1,
+        "correlation": 3,
+        "r_max": 5.0,
+        "ema": True,
+        "device": "cuda",
+        "save_cpu": True,
     }
     
     # Initialize ase database.
@@ -139,7 +136,7 @@ def main():
         db_ase=db_ase,
         key_groups=key_groups,
         key_stratify=key_stratify,
-        finetune_mlp_fun=finetune_mace_train_val,
+        finetune_MLP_fun=finetune_MACE_model,
         calc=calc,
         crossval=crossval,
         kwargs_trainer=kwargs_trainer,
@@ -154,15 +151,15 @@ def main():
     
     # Results database.
     model_tag = "finetuned" if finetuning is True else "pretrained"
-    db_res_name = f"ZrO2_mace_{model_tag}.db"
+    db_res_name = f"ZrO2_{calc_name}_{model_tag}.db"
     keys_store = ["class", "species", "surface", "dopant", "uid"]
     keys_match = ["uid"]
     
     # Store results into ase database.
-    db_res = connect(name=db_res_name, append=True)
+    db_ase = connect(name=db_res_name, append=True)
     write_atoms_list_to_db(
-        atoms_list=results["atoms_pred"],
-        db_ase=db_res,
+        atoms_list=results["Atoms_list_MLP"],
+        db_ase=db_ase,
         keys_store=keys_store,
         keys_match=keys_match,
     )

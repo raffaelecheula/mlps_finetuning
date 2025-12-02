@@ -21,7 +21,7 @@ def main():
     # DFT output and database parameters.
     basedir = "../../doped-ZrO2/"
     index = ":"
-    db_dft_name = "ZrO2_dft.db"
+    db_DFT_name = "ZrO2_DFT.db"
     keys_store = ["class", "species", "surface", "dopant", "uid", "index", "relaxed"]
 
     # Function to read quantum espresso output files.
@@ -130,7 +130,7 @@ def main():
             atoms.info["surface"] = "none"
     
     # Write atoms to ase database.
-    db_ase = connect(name=db_dft_name, append=False)
+    db_ase = connect(name=db_DFT_name, append=False)
     write_atoms_list_to_db(
         atoms_list=atoms_list,
         db_ase=db_ase,

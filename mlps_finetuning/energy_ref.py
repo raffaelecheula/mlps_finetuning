@@ -29,7 +29,7 @@ def get_symbols_dict(atoms: Atoms) -> dict:
 
 def calculate_energy_corrections(atoms_list: list, calc: Calculator) -> dict:
     """
-    Calculate energy correction per atomic species for finetuning of MLPs.
+    Calculate energy correction per atomic species for fine-tuning of MLPs.
     """
     import pandas as pd
     from sklearn.linear_model import LinearRegression
@@ -46,8 +46,8 @@ def calculate_energy_corrections(atoms_list: list, calc: Calculator) -> dict:
         struct_dict.update(get_symbols_dict(atoms))
         data.update({ii: struct_dict})
     # Create a Dataframe with the data.
-    df = pd.DataFrame.from_dict(data=data, orient='index').fillna(value=0.)
-    y_dep = df.pop('deltaE').to_numpy()
+    df = pd.DataFrame.from_dict(data=data, orient="index").fillna(value=0.)
+    y_dep = df.pop("deltaE").to_numpy()
     X_indep = df.to_numpy()
     elements = df.columns.to_list()
     # Train a linear regression model.
@@ -69,7 +69,7 @@ def get_energy_corrections(
     """
     if os.path.isfile(yaml_corr_name):
         # Read yaml file.
-        with open(yaml_corr_name, 'r') as fileobj:
+        with open(yaml_corr_name, "r") as fileobj:
             energy_corr_dict = yaml.safe_load(fileobj)
     else:
         # Read dft output files.
@@ -77,7 +77,7 @@ def get_energy_corrections(
             atoms_list=read(db_corr_name, index=":"),
             calc=calc,
         )
-        with open(yaml_corr_name, 'w') as fileobj:
+        with open(yaml_corr_name, "w") as fileobj:
             yaml.dump(energy_corr_dict, fileobj)
     return energy_corr_dict
 

@@ -2,19 +2,17 @@
 # IMPORTS
 # -------------------------------------------------------------------------------------
 
+import os
 import numpy as np
 from ase.db import connect
 
-from mlps_finetuning.chgnet import (
-    CHGNetCalculator,
-    finetune_chgnet_train_val,
-)
+from mlps_finetuning.chgnet import CHGNetCalculator, finetune_CHGNet_model
 from mlps_finetuning.energy_ref import get_energy_corrections
 from mlps_finetuning.databases import (
     get_atoms_list_from_db,
     write_atoms_list_to_db,
 )
-from mlps_finetuning.workflow import (
+from mlps_finetuning.crossvalidations import (
     get_crossvalidator,
     get_reference_energies_adsorbates,
     get_formation_energy_adsorbate,
@@ -27,16 +25,22 @@ from mlps_finetuning.workflow import (
 
 def main():
 
+    # MLP model.
+    calc_name = "CHGNet"
+    model_name = None
+
     # Cross-validation parameters.
     stratified = True # Stratified cross-validation.
     group = False # Group cross-validation.
-    key_groups = "dopant" # dopant | species
-    key_stratify = "species" # dopant | species
+    key_groups = "dopant" # None | dopant | species
+    key_stratify = "species" # None | dopant | species
     n_splits = 5 # Number of splits for cross-validation.
-    finetuning = True # Fine-tune the MLP model.
+    finetuning = False # Fine-tune the MLP model.
     kwargs_init = {"index": 0} # {"relaxed": True} or {"index": 0}
     n_gas_added = 0 # Number of times to add gas molecules to training set.
     n_clean_added = 0 # Number of times to add clean surfaces to training set.
+    n_max_train = 1000 # Maximum number of data in training set.
+    only_n_folds = 1 # Run calculations only on the first n folds (for testing).
     only_active_dopants = True
     exclude_physisorbed = True
     random_state = 42
@@ -47,32 +51,30 @@ def main():
     calculate_ref_gas = True
 
     # Ase calculator.
-    use_device = None
-    calc = CHGNetCalculator(use_device=use_device)
+    calc = CHGNetCalculator(model_name=model_name)
 
     # Ase database.
-    db_ase_name = "../ZrO2_dft.db"
+    db_ase_name = "../ZrO2_DFT.db"
     selection = "class=adsorbates"
 
     # Energy corrections database.
     db_corr_name = "../ZrO2_ref.db"
-    yaml_corr_name = "../ZrO2_ref_chgnet.yaml"
+    yaml_corr_name = f"../ZrO2_ref_{calc_name}.yaml"
 
     # Trainer parameters.
     kwargs_trainer = {
+        "val_fraction": 0.10,
+        "logfile": "log.txt",
+        # Parameters.
         "learning_rate": 1e-4,
         "epochs": 100,
-        "batch_size": 8,
+        "batch_size": 4,
         "targets": "ef",
-        "train_ratio": 0.90,
-        "val_ratio": 0.10,
         "optimizer": "Adam",
         "scheduler": "CosLR",
         "criterion": "MSE",
-        "use_device": use_device,
         "print_freq": 10,
-        "wandb_path": "chgnet/crossval-adsorbates",
-        "save_dir": None,
+        "wandb_path": "chgnet/adsorbates",
     }
     
     # Initialize ase database.
@@ -128,7 +130,7 @@ def main():
         db_ase=db_ase,
         key_groups=key_groups,
         key_stratify=key_stratify,
-        finetune_mlp_fun=finetune_chgnet_train_val,
+        finetune_MLP_fun=finetune_CHGNet_model,
         calc=calc,
         crossval=crossval,
         kwargs_trainer=kwargs_trainer,
@@ -143,14 +145,14 @@ def main():
     
     # Results database.
     model_tag = "finetuned" if finetuning is True else "pretrained"
-    db_res_name = f"ZrO2_chgnet_{model_tag}.db"
+    db_res_name = f"ZrO2_{calc_name}_{model_tag}.db"
     keys_store = ["class", "species", "surface", "dopant", "uid"]
     keys_match = ["uid"]
     
     # Store results into ase database.
     db_res = connect(name=db_res_name, append=True)
     write_atoms_list_to_db(
-        atoms_list=results["atoms_pred"],
+        atoms_list=results["Atoms_list_MLP"],
         db_ase=db_res,
         keys_store=keys_store,
         keys_match=keys_match,

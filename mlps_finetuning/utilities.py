@@ -2,6 +2,8 @@
 # IMPORTS
 # -------------------------------------------------------------------------------------
 
+import sys
+import logging
 import warnings
 import numpy as np
 from copy import deepcopy
@@ -143,12 +145,12 @@ def parity_plot(
             y=lims[0]+(lims[1]-lims[0])*0.92,
             s=f"MAE = {mae:6.3f} [eV]\nRMSE = {rmse:6.3f} [eV]",
             fontsize=13,
-            ha='center',
-            va='center',
+            ha="center",
+            va="center",
             bbox={
-                "boxstyle": 'round,pad=0.5',
-                "edgecolor": 'black',
-                "facecolor": 'white',
+                "boxstyle": "round,pad=0.5",
+                "edgecolor": "black",
+                "facecolor": "white",
                 "linewidth": 1.5,
             },
         )
@@ -209,12 +211,12 @@ def violin_plot(
             y=0.92*ylim[1],
             s=f"MAE = {mae:6.3f} [eV]\nRMSE = {rmse:6.3f} [eV]",
             fontsize=13,
-            ha='center',
-            va='center',
+            ha="center",
+            va="center",
             bbox={
-                "boxstyle": 'round,pad=0.5',
-                "edgecolor": 'black',
-                "facecolor": 'white',
+                "boxstyle": "round,pad=0.5",
+                "edgecolor": "black",
+                "facecolor": "white",
                 "linewidth": 1.5,
             },
         )
@@ -233,6 +235,37 @@ def print_title(
     """
     for text in ["-" * width, string.center(width), "-" * width]:
         print("#", text, "#")
+
+# -------------------------------------------------------------------------------------
+# REDIRECT OUTPUT
+# -------------------------------------------------------------------------------------
+
+class RedirectOutput:
+    def __init__(self, logfile: str = None):
+        self.logfile = logfile
+
+    def __enter__(self):
+        # Save old outputs and handlers.
+        self.old_stdout = sys.stdout
+        self.old_stderr = sys.stderr
+        self.old_handlers = logging.root.handlers[:]
+        logging.root.handlers.clear()
+        # Redirect outputs.
+        if self.logfile is not None:
+            sys.stdout = open(file=self.logfile, mode="a")
+            sys.stderr = sys.stdout
+
+    def __exit__(self, exc_type, exc, tb):
+        if self.logfile is not None:
+            sys.stdout.close()
+            sys.stdout = self.old_stdout
+            sys.stderr = self.old_stderr
+        # Restore old handlers.
+        logging.root.handlers.clear()
+        for old in self.old_handlers:
+            logging.root.addHandler(old)
+        # Do not suppress exceptions.
+        return False
 
 # -------------------------------------------------------------------------------------
 # END
