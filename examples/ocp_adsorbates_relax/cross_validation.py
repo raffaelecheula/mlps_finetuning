@@ -40,6 +40,7 @@ def main():
     n_gas_added = 0 # Number of times to add gas molecules to training set.
     n_clean_added = 0 # Number of times to add clean surfaces to training set.
     n_max_train = 1000 # Maximum number of data in training set.
+    only_n_folds = 1 # Run calculations only on the first n folds (for testing).
     only_active_dopants = True
     exclude_physisorbed = True
     random_state = 42
@@ -140,9 +141,11 @@ def main():
         finetuning=finetuning,
         atoms_train_added=atoms_train_added,
         formation_energies=formation_energies,
+        formation_energy_fun=get_formation_energy_adsorbate,
         ref_energies_fun=get_reference_energies_adsorbates,
         ref_energies_kwargs=ref_energies_kwargs,
-        formation_energy_fun=get_formation_energy_adsorbate,
+        n_max_train=n_max_train,
+        only_n_folds=only_n_folds,
     )
     
     # Results database.

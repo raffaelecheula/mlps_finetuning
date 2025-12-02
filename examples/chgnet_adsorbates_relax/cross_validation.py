@@ -138,9 +138,11 @@ def main():
         finetuning=finetuning,
         atoms_train_added=atoms_train_added,
         formation_energies=formation_energies,
+        formation_energy_fun=get_formation_energy_adsorbate,
         ref_energies_fun=get_reference_energies_adsorbates,
         ref_energies_kwargs=ref_energies_kwargs,
-        formation_energy_fun=get_formation_energy_adsorbate,
+        n_max_train=n_max_train,
+        only_n_folds=only_n_folds,
     )
     
     # Results database.
