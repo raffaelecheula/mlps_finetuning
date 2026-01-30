@@ -3,10 +3,14 @@
 # -------------------------------------------------------------------------------------
 
 import os
+import shutil
 import yaml
 import numpy as np
+import warnings
+from copy import deepcopy
 from ase.cluster import Icosahedron
 from ase.calculators.calculator import Calculator
+warnings.filterwarnings("ignore", category=FutureWarning)
 from fairchem.core import OCPCalculator as OCPCalculatorOriginal
 
 from mlps_finetuning.energy_ref import get_corrected_energy
@@ -109,7 +113,7 @@ def train_OCP_model(
     config_yaml_path: str,
     directory: str = "training",
     checkpoint_path: str = None,
-    label: str = "model_00",
+    label: str = "model",
     checkpoint_name: str = "best_checkpoint.pt",
     logfile: str = None,
     **kwargs,
@@ -170,8 +174,10 @@ def update_config_and_train_OCP_model(
     delete_config_keys: list = "default",
     update_config_keys: dict = {},
     config_yaml_path: str = None,
+    checkpoint_name: str = "best_checkpoint.pt",
     kwargs_cmd: dict = {},
-    label: str = "model_00",
+    label: str = "model",
+    logfile: str = None,
     **kwargs: dict,
 ) -> str:
     """
@@ -221,6 +227,8 @@ def update_config_and_train_OCP_model(
         config_yaml_path=config_yaml_path,
         directory=directory,
         label=label,
+        checkpoint_name=checkpoint_name,
+        logfile=logfile,
         **kwargs_cmd,
     )
     # Return new checkpoint path and config.
@@ -283,19 +291,20 @@ def get_update_config_keys(
     db_format: str = "ase_db",
     gpus: int = 1,
     amp: bool = False,
-    eval_every: int = 10,
+    eval_every: int = 100,
     epochs: int = 100,
     learning_rate: float = 1e-4,
-    batch_size: int = 1,
-    eval_batch_size: int = 1,
+    batch_size: int = 4,
+    eval_batch_size: int = 4,
     num_workers: int = 8,
-    energy_coeff: float = 1,
-    force_coeff: float = 100,
-    stress_coeff: float = 1,
+    energy_coeff: float = 30,
+    forces_coeff: float = 60,
+    stress_coeff: float = 10,
     primary_metric: str = "forces_mae",
     warmup_epochs: int = 5,
     warmup_steps: int = 10,
     logger: str = "tensorboard",
+    **kwargs: dict,
 ) -> dict:
     """
     Get update-config keys.
@@ -311,11 +320,11 @@ def get_update_config_keys(
         "optim.eval_batch_size": eval_batch_size,
         "optim.num_workers": num_workers,
         "optim.energy_coefficient": energy_coeff,
-        "optim.force_coefficient": force_coeff,
+        "optim.force_coefficient": forces_coeff,
         "task.primary_metric": primary_metric,
         "logger": logger,
         "loss_functions.[0].energy.coefficient": energy_coeff,
-        "loss_functions.[1].forces.coefficient": force_coeff,
+        "loss_functions.[1].forces.coefficient": forces_coeff,
         "dataset.train.src": db_train_path,
         "dataset.train.format": db_format,
         "dataset.train.a2g_args.r_energy": True,
@@ -447,19 +456,19 @@ def prepare_train_val_test_dbs(
     if atoms_tasks is None:
         train_fraction = 1. - val_fraction - test_fraction
         # Shuffle the list of atoms.
-        if train_fraction < 1.:
+        if round(train_fraction) < 1.0:
             atoms_list = atoms_list[:]
             rng = np.random.default_rng(seed=seed)
             rng.shuffle(atoms_list)
         n_data = len(atoms_list)
-        aa = int(n_data * train_fraction)
-        bb = int(n_data * (train_fraction + val_fraction))
+        aa = int(round(n_data * train_fraction))
+        bb = int(round(n_data * (train_fraction + val_fraction)))
         atoms_tasks = [atoms_list[:aa], atoms_list[aa:bb], atoms_list[bb:]]
     # Write to the databases.
     db_path_list = []
     for task, atoms_list in zip(tasks, atoms_tasks):
         # Do not create an empty database.
-        if len(atoms_list) == 0:
+        if atoms_list is None or len(atoms_list) == 0:
             db_path_list.append(None)
             continue
         # Create directory.
@@ -470,23 +479,33 @@ def prepare_train_val_test_dbs(
         with connect(db_path, append=False) as db_ase:
             natoms = []
             for atoms in atoms_list:
+                # Copy atoms.
+                calc = deepcopy(atoms.calc)
+                atoms = atoms.copy()
+                atoms.calc = calc
+                # Get forces with no constraints.
+                forces = atoms.get_forces(apply_constraint=False)
                 # Apply energy correction.
-                if energy_corr_dict is not None:
-                    atoms.calc.results["energy"] = get_corrected_energy(
-                        atoms=atoms,
-                        energy_corr_dict=energy_corr_dict,
-                    )
+                energy = get_corrected_energy(
+                    atoms=atoms,
+                    energy_corr_dict=energy_corr_dict,
+                )
                 # Convert stress to Voigt order.
                 stress = atoms.calc.results.get("stress", np.zeros(6))
                 if stress.shape == (3, 3):
-                    atoms.calc.results["stress"] = full_3x3_to_voigt_6_stress(stress)
+                    stress = full_3x3_to_voigt_6_stress(stress)
+                # Remove constraints and update results.
+                atoms.constraints = []
+                atoms.calc.atoms = atoms
+                atoms.calc.results = {
+                    "energy": energy,
+                    "forces": forces,
+                    "stress": stress,
+                }
                 # Write to database.
                 db_ase.write(atoms)
                 natoms.append(len(atoms))
             db_ase.metadata = {"natoms": natoms}
-        # Write metadata file.
-        metadata_name = os.path.join(directory, task, "metadata.npz")
-        np.savez_compressed(metadata_name, natoms=natoms)
     # Return paths of databases.
     return db_path_list
 
@@ -498,11 +517,14 @@ def finetune_OCP_model(
     atoms_list: list,
     calc: Calculator = None,
     directory: str = "finetuning",
+    label: str = "model",
+    energy_corr_dict: dict = None,
     val_fraction: float = 0.1,
     test_fraction: float = 0.0,
     seed: int = 42,
     atoms_tasks: list = None,
-    energy_corr_dict: dict = None,
+    logfile: str = None,
+    clean_directory: bool = False,
     config_dict: dict = None,
     checkpoint_path: str = None,
     model_name: str = None,
@@ -510,14 +532,17 @@ def finetune_OCP_model(
     config_yaml_path: str = None,
     delete_config_keys: list = "default",
     update_config_keys: dict = {},
+    checkpoint_name: str = "best_checkpoint.pt",
     kwargs_cmd: dict = {},
-    label: str = "model_00",
-    kwargs_calc = {"seed": 42},
+    calc_kwargs = {"seed": 42},
     **kwargs: dict,
 ) -> Calculator:
     """
     Fine-tune OCP model from ase Atoms data.
     """
+    # Remove old directory.
+    if clean_directory is True and os.path.isdir(directory):
+        shutil.rmtree(directory)
     # Start from the model in the calculator.
     if calc is not None:
         config_dict = calc.config
@@ -531,6 +556,9 @@ def finetune_OCP_model(
         atoms_tasks=atoms_tasks,
         energy_corr_dict=energy_corr_dict,
     )
+    # No best checkpoint without validation set.
+    if db_val_path is None:
+        checkpoint_name = "checkpoint.pt"
     # Run the fine-tuning.
     checkpoint_path_new, config_dict_new = update_config_and_train_OCP_model(
         directory=directory,
@@ -544,148 +572,18 @@ def finetune_OCP_model(
         delete_config_keys=delete_config_keys,
         update_config_keys=update_config_keys,
         config_yaml_path=config_yaml_path,
+        checkpoint_name=checkpoint_name,
         kwargs_cmd=kwargs_cmd,
         label=label,
+        logfile=logfile,
         **kwargs,
     )
     # Return calculator.
     return OCPCalculator(
         checkpoint_path=checkpoint_path_new,
         config_yml=config_dict_new,
-        **kwargs_calc,
+        **calc_kwargs,
     )
-
-# -------------------------------------------------------------------------------------
-# FINETUNE OCP ACTLEARN
-# -------------------------------------------------------------------------------------
-
-'''
-def finetune_OCP_actlearn(
-    calc: Calculator,
-    atoms_list: list,
-    label: str = "model_00",
-    from_pretrained: bool = False,
-    checkpoint_name: str = "checkpoint.pt",
-    directory: str = "finetuning",
-    val_fraction: float = 0.0,
-    test_fraction: float = 0.0,
-    energy_corr_dict: dict = None,
-    seed: int = 42,
-    kwargs_config: dict = {},
-    delete_config_keys: list = "default",
-    update_config_keys: dict = {},
-    kwargs_train: dict = {},
-    kwargs_calc = {"seed": 42},
-) -> Calculator:
-    """
-    Get fine-tuned OCP MLP calculator.
-    """
-    # Get initial config.
-    config_dict = calc.config.copy()
-    # Get checkpoint path.
-    if "checkpoint_path" in calc.info and from_pretrained is False:
-        checkpoint_path = calc.info["checkpoint_path"]
-    else:
-        checkpoint_path = config_dict["checkpoint"]
-    # Update kwargs train.
-    kwargs_train = {**kwargs_train, "label": label, "checkpoint_name": checkpoint_name}
-    # Fine-tune OCP model.
-    calc = finetune_OCP_train_val_test(
-        atoms_list=atoms_list,
-        directory=directory,
-        val_fraction=val_fraction,
-        test_fraction=test_fraction,
-        energy_corr_dict=energy_corr_dict,
-        seed=seed,
-        checkpoint_path=checkpoint_path,
-        kwargs_config=kwargs_config,
-        delete_config_keys=delete_config_keys,
-        update_config_keys=update_config_keys,
-        kwargs_train=kwargs_train,
-        kwargs_calc=kwargs_calc,
-    )
-    calc.info["checkpoint_path"] = checkpoint_path
-    # Return calculator.
-    return calc
-
-# -------------------------------------------------------------------------------------
-# FINETUNE OCP ACTLEARN
-# -------------------------------------------------------------------------------------
-
-def finetune_OCP_actlearn(
-    calc: Calculator,
-    db_train_path: str,
-    db_val_path: str = None,
-    db_test_path: str = None,
-    label: str = "model_00",
-    directory: str = "finetuning",
-    from_pretrained: bool = False,
-    checkpoint_name: str = "checkpoint.pt",
-    kwargs_config: dict = {},
-    kwargs_train: dict = {},
-    kwargs_calc = {"seed": 42},
-):
-    """
-    Get fine-tuned OCP MLP calculator.
-    """
-    import torch
-    # Get initial config.
-    if "config_init" in calc.info:
-        config_init = calc.info["config_init"]
-    else:
-        config_init = calc.config.copy()
-    # Get checkpoint path.
-    if "checkpoint_path" in calc.info and from_pretrained is True:
-        checkpoint_path = calc.info["checkpoint_path"]
-    else:
-        checkpoint_path = config_init["checkpoint"]
-    # OCP fine-tuning parameters.
-    os.makedirs(directory, exist_ok=True)
-    config_dict = config_init.copy()
-    # Add databases paths to kwargs config.
-    kwargs_config["db_train_path"] = db_train_path
-    kwargs_config["db_val_path"] = db_val_path
-    kwargs_config["db_test_path"] = db_test_path
-    # Get update-config keys from kwargs config.
-    update_config_keys = get_update_config_keys(
-        config_dict=config_dict,
-        checkpoint_path=checkpoint_path,
-        **kwargs_config,
-    )
-    # Default delete keys.
-    if delete_config_keys == "default":
-        delete_config_keys = default_delete_config_keys()
-    # Update config dict.
-    config_dict_new = update_config_dict(
-        config_dict=config_dict,
-        delete_config_keys=delete_config_keys,
-        update_config_keys=update_config_keys,
-    )
-    # Write config yaml file.
-    config_yaml_path = os.path.join(directory, "config.yaml")
-    with open(config_yaml_path, "w") as fileobj:
-        yaml.dump(config_dict_new, fileobj)
-    # Run the fine-tuning.
-    checkpoint_path_new = train_OCP_model(
-        checkpoint_path=checkpoint_path,
-        config_yaml_path=config_yaml_path,
-        directory=directory,
-        label=label,
-        checkpoint_name=checkpoint_name,
-        **kwargs_train,
-    )
-    # Get the fine-tuned OCP calculator.
-    calc = OCPCalculator(
-        checkpoint_path=checkpoint_path,
-        **kwargs_calc,
-    )
-    calc.info.update({
-        "config_init": config_init,
-        "checkpoint_path": checkpoint_path,
-    })
-    # Return calculator.
-    return calc
-'''
 
 # -------------------------------------------------------------------------------------
 # END

@@ -24,6 +24,7 @@ def main():
     filename = "pw_tot.pwo"
     index = -1
     db_ref_name = "ZrO2_ref.db"
+    references_gas = ["H2", "H2O", "CO2"]
     keys_store = []
 
     # Function to read quantum espresso output files.
@@ -36,33 +37,28 @@ def main():
 
     # Get molecules structures.
     atoms_molecules = get_atoms_from_nested_dirs(
-        basedir=basedir+"Molecules",
-        tree_keys=["name"],
+        basedir=basedir + "Molecules",
+        tree_keys=["species"],
         filename=filename,
         index=index,
         read_fun=read_fun,
         add_info={"class": "molecules", "dopant": None},
     )
-    # Get bulks structures.
-    atoms_bulks = get_atoms_from_nested_dirs(
-        basedir=basedir+"Bulks",
-        tree_keys=["name"],
-        filename=filename,
-        index=index,
-        read_fun=read_fun,
-        add_info={"class": "bulks", "dopant": None},
-    )
     # Get surfaces structures.
     atoms_surfaces = get_atoms_from_nested_dirs(
-        basedir=basedir+"Surfaces",
-        tree_keys=[None, "dopant"],
-        filename=filename,
+        basedir=basedir + "ReactionPaths",
+        tree_keys=["dopant"],
+        filename="adsorbates/00_clean/pw_tot.pwo",
         index=index,
         read_fun=read_fun,
-        add_info={"class": "surfaces", "name": "clean"},
+        add_info={"species": "00_clean"},
     )
+    # Filter atoms.
+    atoms_molecules = [
+        atoms for atoms in atoms_molecules if atoms.info["species"] in references_gas
+    ]
     # Merge all atoms lists.
-    atoms_list = atoms_molecules+atoms_bulks+atoms_surfaces
+    atoms_list = atoms_molecules + atoms_surfaces
     
     # Write atoms to ase database.
     db_ase = connect(name=db_ref_name, append=False)

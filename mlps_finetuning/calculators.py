@@ -47,7 +47,6 @@ aliases_FAIRChem = {
 
 def get_CHGNet_calculator(
     model_name: str,
-    atoms: Atoms = None,
     **kwargs: dict,
 ) -> Calculator:
     """
@@ -73,8 +72,6 @@ def get_CHGNet_calculator(
 
 def get_MACE_calculator(
     model_name: str,
-    atoms: Atoms = None,
-    logfile: str = None,
     **kwargs: dict,
 ) -> Calculator:
     """
@@ -99,8 +96,6 @@ def get_MACE_calculator(
 
 def get_OCP_calculator(
     model_name: str,
-    atoms: Atoms = None,
-    logfile: str = None,
     **kwargs: dict,
 ) -> Calculator:
     """
@@ -127,8 +122,6 @@ def get_OCP_calculator(
 
 def get_FAIRChem_calculator(
     model_name: str,
-    atoms: Atoms = None,
-    logfile: str = None,
     **kwargs: dict,
 ) -> Calculator:
     """
@@ -154,42 +147,35 @@ def get_FAIRChem_calculator(
 # -------------------------------------------------------------------------------------
 
 def get_Espresso_calculator(
-    atoms: Atoms,
     directory: str = "espresso",
-    filename_yaml: str = "espresso.yaml",
-    pseudo_dir: str = None,
     command: str = "mpirun pw.x",
+    pseudo_dir: str = None,
+    filename_yaml: str = "espresso.yaml",
     clean_directory: bool = False,
+    socket: bool = False,
     basedir: str = "",
     **kwargs,
 ) -> Calculator:
     """
     Get Quantum Espresso calculator.
     """
-    from ase.calculators.espresso import EspressoProfile, Espresso
-    # Read yaml file.
+    from mlps_finetuning.espresso import Espresso
+    # Yaml file.
     if filename_yaml is not None:
-        import yaml
-        filepath = os.path.join(basedir, filename_yaml)
-        if os.path.isfile(filepath):
-            with open(filepath, mode="r") as fileobj:
-                kwargs.update(yaml.safe_load(fileobj))
-    # Get pseudopotentials names.
-    if kwargs.get("pseudopotentials", "auto") == "auto":
-        from qe_toolkit.io import get_pseudopotentials_names
-        kwargs["pseudopotentials"] = get_pseudopotentials_names()
-    # Get pseudopotentials directory.
-    if pseudo_dir is None:
-        pseudo_dir = os.getenv("ESPRESSO_PSEUDO", ".")
-    # Remove previous calculaton folder.
-    if clean_directory is True and os.path.isdir(directory):
-        import shutil
-        shutil.rmtree(directory)
-    # Return Quantum Espresso calculator.
-    profile = EspressoProfile(command=command, pseudo_dir=pseudo_dir)
-    calc = Espresso(profile=profile, directory=directory, **kwargs)
-    calc.counter = 0
-    calc.info = {}
+        filename_yaml = os.path.join(basedir, filename_yaml)
+    # Set up Espresso calculator.
+    calc = Espresso(
+        directory=directory,
+        command=command,
+        pseudo_dir=pseudo_dir,
+        filename_yaml=filename_yaml,
+        clean_directory=clean_directory,
+        **kwargs,
+    )
+    # Socket calculator.
+    if socket is True:
+        calc = calc.to_socket()
+    # Return calculator.
     return calc
 
 # -------------------------------------------------------------------------------------
@@ -197,7 +183,6 @@ def get_Espresso_calculator(
 # -------------------------------------------------------------------------------------
 
 def get_VASP_calculator(
-    atoms: Atoms,
     directory: str = "vasp",
     filename_yaml: str = "vasp.yaml",
     clean_directory: bool = False,
@@ -209,24 +194,18 @@ def get_VASP_calculator(
     Get VASP calculator.
     """
     if interactive is True:
-        from ase.calculators.vasp import VaspInteractive as Vasp
+        from mlps_finetuning.vasp import VaspInteractive
     else:
-        from ase.calculators.vasp import Vasp
-    # Read yaml file.
+        from mlps_finetuning.vasp import Vasp
+    # Yaml file.
     if filename_yaml is not None:
-        import yaml
-        filepath = os.path.join(basedir, filename_yaml)
-        if os.path.isfile(filepath):
-            with open(filepath, mode="r") as fileobj:
-                kwargs.update(yaml.safe_load(fileobj))
-    # Remove previous calculaton folder.
-    if clean_directory is True and os.path.isdir(directory):
-        import shutil
-        shutil.rmtree(directory)
+        filename_yaml = os.path.join(basedir, filename_yaml)
     # Return VASP calculator.
-    calc = Vasp(directory=directory, **kwargs)
-    calc.counter = 0
-    calc.info = {}
+    calc = Vasp(
+        directory=directory,
+        filename_yaml=filename_yaml,
+        **kwargs,
+    )
     return calc
 
 # -------------------------------------------------------------------------------------
@@ -236,7 +215,6 @@ def get_VASP_calculator(
 def get_calculator(
     calc_name: str,
     model_name: str = None,
-    atoms: Atoms = None,
     **kwargs: dict,
 ) -> Calculator:
     """
@@ -244,28 +222,65 @@ def get_calculator(
     """
     # Get model name from calc name.
     if "/" in calc_name:
-        calc_name, model_name = model_name.split("/")
+        calc_name, model_name = calc_name.split("/")
+    elif "_" in calc_name:
+        calc_name, model_name = calc_name.split("_")
     # CHGNet calculator.
     if calc_name == "CHGNet":
-        return get_CHGNet_calculator(model_name=model_name, atoms=atoms, **kwargs)
+        return get_CHGNet_calculator(model_name=model_name, **kwargs)
     # MACE calculator.
     elif calc_name == "MACE":
-        return get_MACE_calculator(model_name=model_name, atoms=atoms, **kwargs)
+        return get_MACE_calculator(model_name=model_name, **kwargs)
     # OCP Calculator.
     elif calc_name == "OCP":
-        return get_OCP_calculator(model_name=model_name, atoms=atoms, **kwargs)
+        return get_OCP_calculator(model_name=model_name, **kwargs)
     # FAIRChem Calculator.
     elif calc_name == "FAIRChem":
-        return get_FAIRChem_calculator(model_name=model_name, atoms=atoms, **kwargs)
+        return get_FAIRChem_calculator(model_name=model_name, **kwargs)
     # Espresso Calculator.
     elif calc_name == "Espresso":
-        return get_Espresso_calculator(atoms=atoms, **kwargs)
+        return get_Espresso_calculator(**kwargs)
     # VASP Calculator.
     elif calc_name == "VASP":
-        return get_VASP_calculator(atoms=atoms, **kwargs)
+        return get_VASP_calculator(**kwargs)
     # No match found.
     else:
-        raise NameError(f"{model_name} calculator not found!")
+        raise NameError(f"{calc_name} calculator not found!")
+
+# -------------------------------------------------------------------------------------
+# GET FINETUNE FUNCTION
+# -------------------------------------------------------------------------------------
+
+def get_finetune_function(
+    calc_name: str,
+) -> callable:
+    """
+    Get the fine-tuning function correspondent to a calculator.
+    """
+    # Get model name from calc name.
+    if "/" in calc_name:
+        calc_name, model_name = calc_name.split("/")
+    elif "_" in calc_name:
+        calc_name, model_name = calc_name.split("_")
+    # CHGNet calculator.
+    if calc_name == "CHGNet":
+        from mlps_finetuning.chgnet import finetune_CHGNet_model
+        return finetune_CHGNet_model
+    # MACE calculator.
+    elif calc_name == "MACE":
+        from mlps_finetuning.mace import finetune_MACE_model
+        return finetune_MACE_model
+    # OCP Calculator.
+    elif calc_name == "OCP":
+        from mlps_finetuning.ocp import finetune_OCP_model
+        return finetune_OCP_model
+    # FAIRChem Calculator.
+    elif calc_name == "FAIRChem":
+        from mlps_finetuning.fairchem import finetune_FAIRChem_model
+        return finetune_FAIRChem_model
+    # No match found.
+    else:
+        raise NameError(f"Fine-tuning function for {model_name} not found!")
 
 # -------------------------------------------------------------------------------------
 # END

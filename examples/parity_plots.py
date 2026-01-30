@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 from ase.db import connect
 
 from mlps_finetuning.databases import get_atoms_list_from_db, get_atoms_from_db
-from mlps_finetuning.utilities import parity_plot
+from mlps_finetuning.plots import parity_plot
 
 # -------------------------------------------------------------------------------------
 # MAIN
@@ -23,7 +23,7 @@ def main():
     finetuning = False
     
     # Results database.
-    directory = f"{model.lower()}_adsorbates_relax"
+    directory = f"adsorbates_cross_validation/{model.lower()}"
     model_tag = "finetuned" if finetuning is True else "pretrained"
     db_res_name = f"{directory}/ZrO2_{model}_{model_tag}.db"
     # Initialize ase database.

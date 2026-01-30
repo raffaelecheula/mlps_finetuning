@@ -3,10 +3,12 @@
 # -------------------------------------------------------------------------------------
 
 import os
+import shutil
 import yaml
 import inspect
 import numpy as np
 from pathlib import Path
+from copy import deepcopy
 from ase.calculators.calculator import Calculator
 from fairchem.core import FAIRChemCalculator as FAIRChemCalculatorOriginal
 from fairchem.core.calculate.pretrained_mlip import (
@@ -68,7 +70,7 @@ def train_FAIRChem_model(
     regression_tasks: str = "ef",
     base_model_name: str = "uma-s-1p1",
     checkpoint_path: str = None,
-    label: str = "model_00",
+    label: str = "model",
     energy_coeff: float = None,
     forces_coeff: float = None,
     stress_coeff: float = None,
@@ -151,6 +153,10 @@ def create_config_yaml_files(
     base_model_name: str = "uma-s-1",
     checkpoint_path: str = None,
     label: str = None,
+    epochs: int = 100,
+    learning_rate: float = 1e-4,
+    batch_size: int = 4,
+    steps: int = None,
     energy_coeff: float = None,
     forces_coeff: float = None,
     stress_coeff: float = None,
@@ -175,36 +181,40 @@ def create_config_yaml_files(
     # Update fine-tuning file.
     with open(templates_dir / filename_yaml) as fileobj:
         config = yaml.safe_load(fileobj)
-        config["base_model_name"] = str(base_model_name)
-        config["defaults"][0]["data"] = str(filename_task.stem)
-        config["job"]["run_dir"] = str(directory)
-        if label is not None:
-            config["job"]["timestamp_id"] = label
-        if checkpoint_path is not None:
-            config["runner"]["train_eval_unit"]["model"]["checkpoint_location"] = (
-                checkpoint_path
-            )
-            del config["base_model_name"]
+    config["epochs"] = epochs
+    config["lr"] = learning_rate
+    config["batch_size"] = batch_size
+    config["steps"] = steps
+    config["base_model_name"] = str(base_model_name)
+    config["defaults"][0]["data"] = str(filename_task.stem)
+    config["job"]["run_dir"] = str(directory)
+    if label is not None:
+        config["job"]["timestamp_id"] = label
+    if checkpoint_path is not None:
+        config["runner"]["train_eval_unit"]["model"]["checkpoint_location"] = (
+            checkpoint_path
+        )
+        del config["base_model_name"]
     config.update(**kwargs)
     with open(Path(directory) / filename, "w") as fileobj:
         yaml.dump(config, fileobj, default_flow_style=False, sort_keys=False)
     # Update task yaml file.
     with open(templates_dir / filename_task) as fileobj:
         config_task = yaml.safe_load(fileobj)
-        config_task["dataset_name"] = str(dataset_name)
-        config_task["normalizer_rmsd"] = float(normalizer_rmsd)
-        config_task["elem_refs"] = list(elem_refs)
-        config_task["train_dataset"]["splits"]["train"]["src"] = str(db_train_path)
-        if db_val_path is not None:
-            config_task["val_dataset"]["splits"]["val"]["src"] = str(db_val_path)
-        if db_test_path is not None:
-            config_task["val_dataset"]["splits"]["val"]["src"] = str(db_val_path)
-        if energy_coeff is not None:
-            config_task["tasks_list"][0]["loss_fn"]["coefficient"] = energy_coeff
-        if forces_coeff is not None:
-            config_task["tasks_list"][1]["loss_fn"]["coefficient"] = forces_coeff
-        if stress_coeff is not None:
-            config_task["tasks_list"][2]["loss_fn"]["coefficient"] = stress_coeff
+    config_task["dataset_name"] = str(dataset_name)
+    config_task["normalizer_rmsd"] = float(normalizer_rmsd)
+    config_task["elem_refs"] = list(elem_refs)
+    config_task["train_dataset"]["splits"]["train"]["src"] = str(db_train_path)
+    if db_val_path is not None:
+        config_task["val_dataset"]["splits"]["val"]["src"] = str(db_val_path)
+    if db_test_path is not None:
+        config_task["val_dataset"]["splits"]["val"]["src"] = str(db_val_path)
+    if energy_coeff is not None:
+        config_task["tasks_list"][0]["loss_fn"]["coefficient"] = energy_coeff
+    if forces_coeff is not None:
+        config_task["tasks_list"][1]["loss_fn"]["coefficient"] = forces_coeff
+    if stress_coeff is not None:
+        config_task["tasks_list"][2]["loss_fn"]["coefficient"] = stress_coeff
     os.makedirs(directory / Path("data"), exist_ok=True)
     with open(Path(directory) / filename_task, "w") as fileobj:
         yaml.dump(config_task, fileobj, default_flow_style=False, sort_keys=False)
@@ -228,18 +238,19 @@ def prepare_train_val_test_dbs(
     Write the list of atoms into train, validation (and test) databases.
     """
     from ase.db import connect
+    from ase.stress import full_3x3_to_voigt_6_stress
     # Get tasks and atoms tasks.
     tasks = ["train", "val", "test"]
     if atoms_tasks is None:
         train_fraction = 1. - val_fraction - test_fraction
         # Shuffle the list of atoms.
-        if train_fraction < 1.:
+        if round(train_fraction) < 1.0:
             atoms_list = atoms_list[:]
             rng = np.random.default_rng(seed=seed)
             rng.shuffle(atoms_list)
         n_data = len(atoms_list)
-        aa = int(n_data * train_fraction)
-        bb = int(n_data * (train_fraction + val_fraction))
+        aa = int(round(n_data * train_fraction))
+        bb = int(round(n_data * (train_fraction + val_fraction)))
         atoms_tasks = [atoms_list[:aa], atoms_list[aa:bb], atoms_list[bb:]]
     # Write to the databases.
     db_path_list = []
@@ -256,12 +267,29 @@ def prepare_train_val_test_dbs(
         with connect(db_path, append=False) as db_ase:
             natoms = []
             for atoms in atoms_list:
+                # Copy atoms.
+                calc = deepcopy(atoms.calc)
+                atoms = atoms.copy()
+                atoms.calc = calc
+                # Get forces with no constraints.
+                forces = atoms.get_forces(apply_constraint=False)
                 # Apply energy correction.
-                if energy_corr_dict is not None:
-                    atoms.calc.results["energy"] = get_corrected_energy(
-                        atoms=atoms,
-                        energy_corr_dict=energy_corr_dict,
-                    )
+                energy = get_corrected_energy(
+                    atoms=atoms,
+                    energy_corr_dict=energy_corr_dict,
+                )
+                # Convert stress to Voigt order.
+                stress = atoms.calc.results.get("stress", np.zeros(6))
+                if stress.shape == (3, 3):
+                    stress = full_3x3_to_voigt_6_stress(stress)
+                # Remove constraints and update results.
+                atoms.constraints = []
+                atoms.calc.atoms = atoms
+                atoms.calc.results = {
+                    "energy": energy,
+                    "forces": forces,
+                    "stress": stress,
+                }
                 # Write to database.
                 db_ase.write(atoms)
                 natoms.append(len(atoms))
@@ -279,23 +307,27 @@ def finetune_FAIRChem_model(
     atoms_list: list,
     calc: Calculator = None,
     directory: str = "finetuning",
+    label: str = "model",
+    energy_corr_dict: dict = None,
     val_fraction: float = 0.1,
     test_fraction: float = 0.0,
     seed: int = 42,
     atoms_tasks: list = None,
-    energy_corr_dict: dict = None,
+    logfile: str = None,
+    clean_directory: bool = False,
     base_model_name: str = "uma-s-1",
     checkpoint_path: str = None,
     dataset_name: str = "oc20",
     regression_tasks: str = "ef",
-    label: str = "model_00",
-    kwargs_calc: dict = {},
-    logfile: str = None,
+    calc_kwargs: dict = {},
     **kwargs: dict,
 ):
     """
     Fine-tune FAIRChem model from ase Atoms data.
     """
+    # Remove old directory.
+    if clean_directory is True and os.path.isdir(directory):
+        shutil.rmtree(directory)
     # Start from the model in the calculator.
     if calc is not None and "checkpoint_path" in calc.info:
         checkpoint_path = calc.info["checkpoint_path"]
@@ -327,7 +359,7 @@ def finetune_FAIRChem_model(
     calc = FAIRChemCalculator(
         checkpoint_path=checkpoint_path_new,
         task_name=dataset_name,
-        **kwargs_calc,
+        **calc_kwargs,
     )
     calc.info["checkpoint_path"] = checkpoint_path_new
     return calc

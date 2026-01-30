@@ -77,23 +77,39 @@ def get_pretrained_mace_model(
 def train_MACE_model(
     label: str,
     directory: str,
+    seed: int = 42,
     logfile: str = None,
+    epochs: int = 100,
+    learning_rate: float = 1e-4,
+    batch_size: int = 4,
+    energies_ref: str = "average",
+    multiheads_finetuning: bool = False,
     **kwargs: dict,
 ):
     """
     Train MACE model.
     """
     import sys
+    import torch
     import warnings
     from mace.cli.run_train import main as mace_main
     # Suppress warnings.
     warnings.filterwarnings("ignore", module="torch.jit")
-    # Update kwargs.
-    kwargs["name"] = label
-    kwargs["work_dir"] = directory
-    # Set command line arguments.
+    # Training parameters.
+    parameters = {
+        "name": label,
+        "seed": seed,
+        "work_dir": directory,
+        "max_num_epochs": epochs,
+        "lr": learning_rate,
+        "batch_size": batch_size,
+        "E0s": energies_ref,
+        "multiheads_finetuning": str(multiheads_finetuning),
+        "device": "cuda" if torch.cuda.is_available() else "cpu",
+        **kwargs,
+    }
     argv = [""]
-    for key, arg in kwargs.items():
+    for key, arg in parameters.items():
         if arg is True:
             argv.append(f"--{key}")
         elif arg not in (False, None):
@@ -103,7 +119,10 @@ def train_MACE_model(
     with RedirectOutput(logfile=logfile):
         mace_main()
     # Return checkpoint path.
-    return os.path.join(directory, f"{label}.model")
+    if "swa" in parameters:
+        return os.path.join(directory, f"{label}_stagetwo.model")
+    else:
+        return os.path.join(directory, f"{label}.model")
 
 # -------------------------------------------------------------------------------------
 # FINETUNE MACE MODEL
@@ -113,25 +132,37 @@ def finetune_MACE_model(
     atoms_list: list,
     calc: Calculator = None,
     directory: str = "finetuning",
-    label: str = "model_00",
+    label: str = "model",
+    energy_corr_dict: dict = None,
     val_fraction: float = 0.1,
     test_fraction: float = 0.0,
     seed: int = 42,
     atoms_tasks: list = None,
-    energy_corr_dict: dict = None,
-    kwargs_calc: dict = {},
     logfile: str = None,
+    clean_directory: bool = False,
+    energies_ref: str = "average",
+    multiheads_finetuning: bool = False,
+    calc_kwargs: dict = {},
     **kwargs: dict,
 ):
     """
     Fine-tune MACE model from ase Atoms data.
     """
+    # Remove old directory.
+    if clean_directory is True and os.path.isdir(directory):
+        shutil.rmtree(directory)
     # Start from the model in the calculator.
     if calc is not None and "checkpoint_path" in calc.info:
         kwargs["restart_latest"] = True
         checkpoint_path_new = os.path.join(directory, f"{label}.model")
         if checkpoint_path_new != calc.info["checkpoint_path"]:
             shutil.copyfile(calc.info["checkpoint_path"], checkpoint_path_new)
+    # Prepare reference energies.
+    energies_ref = prepare_energies_ref(
+        energies_ref=energies_ref,
+        atoms_list=atoms_list,
+        directory=directory,
+    )
     # Prepare train and test files.
     file_train_path, file_val_path, file_test_path = prepare_train_val_test_files(
         atoms_list=atoms_list,
@@ -149,10 +180,12 @@ def finetune_MACE_model(
         train_file=file_train_path,
         valid_file=file_val_path,
         test_file=file_test_path,
+        energies_ref=energies_ref,
+        multiheads_finetuning=multiheads_finetuning,
         **kwargs,
     )
     # Return calculator.
-    calc = MACECalculator(model_paths=[checkpoint_path_new], **kwargs_calc)
+    calc = MACECalculator(model_paths=[checkpoint_path_new], **calc_kwargs)
     calc.info["checkpoint_path"] = checkpoint_path_new
     return calc
 
@@ -177,13 +210,13 @@ def prepare_train_val_test_files(
     if atoms_tasks is None:
         train_fraction = 1. - val_fraction - test_fraction
         # Shuffle the list of atoms.
-        if train_fraction < 1.:
+        if round(train_fraction) < 1.0:
             atoms_list = atoms_list[:]
             rng = np.random.default_rng(seed=seed)
             rng.shuffle(atoms_list)
         n_data = len(atoms_list)
-        aa = int(n_data * train_fraction)
-        bb = int(n_data * (train_fraction + val_fraction))
+        aa = int(round(n_data * train_fraction))
+        bb = int(round(n_data * (train_fraction + val_fraction)))
         atoms_tasks = [atoms_list[:aa], atoms_list[aa:bb], atoms_list[bb:]]
     # Write to the databases.
     file_path_list = []
@@ -203,11 +236,41 @@ def prepare_train_val_test_files(
                 atoms=atoms,
                 energy_corr_dict=energy_corr_dict,
             )
-            atoms.arrays["REF_forces"] = atoms.get_forces()
+            atoms.arrays["REF_forces"] = atoms.get_forces(apply_constraint=False)
         # Write xyz file.
         write(filename=file_path, images=atoms_list)
     # Return paths of xyz files.
     return file_path_list
+
+# -------------------------------------------------------------------------------------
+# PREPARE ENERGIES REF
+# -------------------------------------------------------------------------------------
+
+def prepare_energies_ref(
+    energies_ref: str,
+    atoms_list: list,
+    directory: str,
+):
+    """
+    Prepare reference energies for training MACE.
+    """
+    # Returns if energies_ref is a string.
+    if isinstance(energies_ref, str):
+        return energies_ref
+    # Zero reference energies if energies_ref is None.
+    if energies_ref is None:
+        energies_ref = {
+            int(key): 0. for atoms in atoms_list for key in atoms.get_atomic_numbers()
+        }
+    # Write reference energies to json file if energies_ref is a dictionary.
+    if isinstance(energies_ref, dict):
+        import json
+        os.makedirs(directory, exist_ok=True)
+        filename = os.path.join(directory, "E0s.json")
+        with open(filename, "w") as fileobj:
+            json.dump(energies_ref, fileobj)
+    # Return json file.
+    return filename
 
 # -------------------------------------------------------------------------------------
 # END

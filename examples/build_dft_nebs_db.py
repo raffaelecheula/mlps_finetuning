@@ -45,7 +45,7 @@ def main():
 
     # Get NEB structures.
     atoms_list = get_atoms_from_nested_dirs(
-        basedir=basedir+"ReactionPaths",
+        basedir=basedir + "ReactionPaths",
         tree_keys=["dopant", "class", "species"],
         filename="pw.pwo",
         index=index,
@@ -71,7 +71,7 @@ def main():
         if atoms.info["dopant"] in dopant_charges_dict:
             atoms.info["dopant"] = dopant_charges_dict[atoms.info["dopant"]]
         if atoms.info["dopant"] != "none":
-            atoms.info["surface"] = "ZrO2-101+"+atoms.info["dopant"]
+            atoms.info["surface"] = "ZrO2-101+" + atoms.info["dopant"]
         else:
             atoms.info["surface"] = "none"
     

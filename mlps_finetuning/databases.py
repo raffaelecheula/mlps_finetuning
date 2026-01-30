@@ -46,7 +46,7 @@ def read_atoms_list(
     read_fun: callable = lambda filepath, index: read(filepath, index=index),
 ) -> list:
     """
-    Read ase Atoms from file and return a list.
+    Read ASE Atoms from file and return a list.
     """
     atoms_list = read_fun(filepath, index=index)
     atoms_list = atoms_list if isinstance(atoms_list, list) else [atoms_list]
@@ -94,7 +94,7 @@ def get_atoms_from_nested_dirs(
     store_uid: bool = True,
 ) -> list:
     """
-    Get list of ase Atoms structures from nested directories.
+    Get list of ASE Atoms structures from nested directories.
     Works with a path tree structured as: basedir/arg[0]/.../arg[N]/filename.
     The atoms.info will have {tree_keys[0]: arg[0], ..., tree_keys[N]: arg[N]}.
     """
@@ -139,7 +139,7 @@ def get_atoms_from_os_walk(
     store_index: bool = True,
 ) -> list:
     """
-    Get list of ase Atoms structures from nested directories with os walk.
+    Get list of ASE Atoms structures from nested directories with os walk.
     """
     atoms_all = []
     for basedir in basedirs:
@@ -174,7 +174,7 @@ def write_atoms_list_to_db(
     **kwargs: dict,
 ):
     """
-    Write list of ase Atoms to ase database.
+    Write list of ASE Atoms to ASE database.
     """
     # Monitor progress with tqdm.
     if use_tqdm is True:
@@ -212,7 +212,7 @@ def write_atoms_to_db(
     **kwargs: dict,
 ):
     """
-    Write atoms to ase database.
+    Write atoms to ASE database.
     """
     # Deep copy atoms and calculator.
     if deepcopy_all is True:
@@ -254,7 +254,7 @@ def get_atoms_list_from_db(
     **kwargs,
 ) -> list:
     """
-    Get list of ase Atoms from ase database.
+    Get list of ASE Atoms from ASE database.
     """
     atoms_list = []
     for id in [aa.id for aa in db_ase.select(selection=selection, **kwargs)]:
@@ -276,7 +276,7 @@ def get_atoms_from_db(
     **kwargs,
 ) -> Atoms:
     """
-    Get ase Atoms from ase database.
+    Get ASE Atoms from ASE database.
     """
     atoms_list = get_atoms_list_from_db(db_ase=db_ase, selection=selection, **kwargs)
     if len(atoms_list) < 1:

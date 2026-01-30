@@ -10,6 +10,7 @@ from copy import deepcopy
 from ase import Atoms
 from scipy.spatial.distance import cdist
 from scipy.optimize import linear_sum_assignment
+from ase.calculators.singlepoint import all_properties
 
 # -------------------------------------------------------------------------------------
 # OPTIMAL REORDER INDICES
@@ -85,142 +86,48 @@ def repeat_atoms_with_results(
     return atoms_rep
 
 # -------------------------------------------------------------------------------------
-# PARITY PLOT
+# FILTER ATOMS LIST
 # -------------------------------------------------------------------------------------
 
-def parity_plot(
-    y_true: list,
-    y_pred: list,
-    y_stds: list = None,
-    ax: object = None,
-    lims: list = [-5, +5],
-    alpha: float = 0.20,
-    color: str = "crimson",
-    ms: float = 5,
-    fmt: str = "o",
-    capsize: float = 3,
-    show_errors: bool = True,
-    add_violin_plot: bool = True,
-    kwargs_errorbar: dict = {},
-    kwargs_violin: dict = {},
-) -> object:
+def filter_atoms_list(
+    atoms_list: list,
+    required_properties: list = ["energy", "forces"],
+):
     """
-    Parity plot of the results.
+    Filter atoms in list with required properties in the results dictionary.
     """
-    if ax is None:
-        import matplotlib.pyplot as plt
-        fig, ax = plt.subplots(figsize=(6, 6), dpi=300)
-    # Plot parity line.
-    ax.plot(lims, lims, "k--")
-    # Check if data are outside the boundaries.
-    y_all = np.hstack([y_true, y_pred])
-    if np.any((y_all < lims[0]) | (y_all > lims[1])):
-        warnings.warn("Some data points fall outside the plot limits!", UserWarning)
-    # Plot data.
-    ax.errorbar(
-        x=y_true,
-        y=y_pred,
-        yerr=y_stds,
-        ms=ms,
-        fmt=fmt,
-        alpha=alpha,
-        color=color,
-        capsize=capsize,
-        **kwargs_errorbar,
-    )
-    ax.set_xlim(*lims)
-    ax.set_ylim(*lims)
-    ax.set_xlabel("E$_{DFT}$ [eV]", fontdict={"fontsize": 16})
-    ax.set_ylabel("E$_{model}$ [eV]", fontdict={"fontsize": 16})
-    ax.tick_params(labelsize=13, width=1.5, length=6, direction="out")
-    for spine in ax.spines.values():
-        spine.set_linewidth(1.5)
-    # Calculate the MAE and the RMSE.
-    if show_errors is True:
-        from sklearn.metrics import mean_absolute_error, mean_squared_error
-        mae = mean_absolute_error(y_true, y_pred)
-        rmse = mean_squared_error(y_true, y_pred, squared=False)
-        ax.text(
-            x=lims[0]+(lims[1]-lims[0])*0.23,
-            y=lims[0]+(lims[1]-lims[0])*0.92,
-            s=f"MAE = {mae:6.3f} [eV]\nRMSE = {rmse:6.3f} [eV]",
-            fontsize=13,
-            ha="center",
-            va="center",
-            bbox={
-                "boxstyle": "round,pad=0.5",
-                "edgecolor": "black",
-                "facecolor": "white",
-                "linewidth": 1.5,
-            },
-        )
-    # Add violin plot.
-    if add_violin_plot is True:
-        inset_ax = fig.add_axes([0.70, 0.13, 0.18, 0.25])
-        violin_plot(
-            y_true=y_true,
-            y_pred=y_pred,
-            ax=inset_ax,
-            color=color,
-            show_errors=False,
-            **kwargs_violin,
-        )
-    return ax
+    return [
+        atoms for atoms in atoms_list
+        if all(key in atoms.calc.results for key in required_properties)
+    ]
 
 # -------------------------------------------------------------------------------------
-# VIOLIN PLOT
+# FILTER RESULTS
 # -------------------------------------------------------------------------------------
 
-def violin_plot(
-    y_true: list,
-    y_pred: list,
-    ax: object = None,
-    ylim: list = [0., +1.5],
-    alpha: float = 0.8,
-    color: str = "crimson",
-    show_errors: bool = True,
-) -> object:
+def filter_results(
+    results: dict,
+    properties: list = all_properties,
+):
     """
-    Violin plot of the errors.
+    Filter results to only properties managed by ASE.
     """
-    if ax is None:
-        import matplotlib.pyplot as plt
-        fig, ax = plt.subplots(figsize=(6, 6), dpi=300)
-    y_err = np.abs(np.array(y_true)-np.array(y_pred))
-    violin = ax.violinplot(
-        dataset=[y_err],
-        showmeans=False,
-        showmedians=False,
-        showextrema=False,
-    )["bodies"][0]
-    violin.set_facecolor(color)
-    violin.set_alpha(alpha)
-    violin.set_edgecolor("k")
-    ax.set_ylabel("Errors [eV]", fontdict={"fontsize": 16})
-    ax.get_xaxis().set_visible(False)
-    ax.set_ylim(*ylim)
-    ax.tick_params(labelsize=13, width=1.5, length=6, direction="inout")
-    for spine in ax.spines.values():
-        spine.set_linewidth(1.5)
-    if show_errors is True:
-        from sklearn.metrics import mean_absolute_error, mean_squared_error
-        mae = mean_absolute_error(y_true, y_pred)
-        rmse = mean_squared_error(y_true, y_pred, squared=False)
-        ax.text(
-            x=0.85,
-            y=0.92*ylim[1],
-            s=f"MAE = {mae:6.3f} [eV]\nRMSE = {rmse:6.3f} [eV]",
-            fontsize=13,
-            ha="center",
-            va="center",
-            bbox={
-                "boxstyle": "round,pad=0.5",
-                "edgecolor": "black",
-                "facecolor": "white",
-                "linewidth": 1.5,
-            },
-        )
-    return ax
+    return {pp: results[pp] for pp in results if pp in properties}
+
+# -------------------------------------------------------------------------------------
+# FILTER CONSTRAINTS
+# -------------------------------------------------------------------------------------
+
+def filter_constraints(
+    atoms: object,
+):
+    """
+    Filter constraints to only constraints managed by ASE.
+    """
+    from ase.constraints import __all__
+    for ii, constraint in reversed(list(enumerate(atoms.constraints))):
+        if constraint.todict()["name"] not in __all__:
+            del atoms.constraints[ii]
 
 # -------------------------------------------------------------------------------------
 # PRINT TITLE
@@ -241,29 +148,44 @@ def print_title(
 # -------------------------------------------------------------------------------------
 
 class RedirectOutput:
-    def __init__(self, logfile: str = None):
+    def __init__(self, logfile: str = None, mode: str = "a"):
         self.logfile = logfile
+        self.mode = mode
 
     def __enter__(self):
         # Save old outputs and handlers.
         self.old_stdout = sys.stdout
         self.old_stderr = sys.stderr
+        # Save old logging handlers.
         self.old_handlers = logging.root.handlers[:]
         logging.root.handlers.clear()
+        # Save old warning function.
+        self.old_showwarning = warnings.showwarning
         # Redirect outputs.
         if self.logfile is not None:
-            sys.stdout = open(file=self.logfile, mode="a")
+            self.logfile_obj = open(file=self.logfile, mode=self.mode)
+            sys.stdout = self.logfile_obj
             sys.stderr = sys.stdout
+            self.redirect_warnings()
+
+    def redirect_warnings(self):
+        # Redirect warnings.
+        def showwarning_new(message, category, filename, lineno, file=None, line=None):
+            out = warnings.formatwarning(message, category, filename, lineno, line)
+            print(out, file=self.logfile_obj)
+        warnings.showwarning = showwarning_new
 
     def __exit__(self, exc_type, exc, tb):
         if self.logfile is not None:
             sys.stdout.close()
             sys.stdout = self.old_stdout
             sys.stderr = self.old_stderr
-        # Restore old handlers.
+        # Restore old logging handlers.
         logging.root.handlers.clear()
         for old in self.old_handlers:
             logging.root.addHandler(old)
+        # Restore old warning function.
+        warnings.showwarning = self.old_showwarning
         # Do not suppress exceptions.
         return False
 

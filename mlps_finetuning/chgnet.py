@@ -3,6 +3,7 @@
 # -------------------------------------------------------------------------------------
 
 import os
+import shutil
 import numpy as np
 from torch.utils.data import DataLoader
 from ase.calculators.calculator import Calculator
@@ -83,7 +84,7 @@ def atoms_list_to_dataset(
             energy = 0.
         # Get forces.
         if "forces" in atoms.calc.results:
-            forces = atoms.get_forces()
+            forces = atoms.get_forces(apply_constraint=False)
         elif "f" in targets:
             print("Missing forces in results.")
             continue
@@ -139,7 +140,7 @@ def train_CHGNet_model(
     learning_rate: float = 1e-4,
     use_device: str = None,
     print_freq: int = 10,
-    wandb_path: str = "chgnet/training",
+    wandb_path: str = None,
     save_dir: str = None,
     save_test_result: bool = False,
     train_composition_model: bool = False,
@@ -187,32 +188,36 @@ def finetune_CHGNet_model(
     atoms_list: list,
     calc: Calculator = None,
     directory: str = "finetuning",
-    label: str = "model_00",
+    label: str = "model",
     energy_corr_dict: dict = None,
+    val_fraction: float = 0.1,
+    test_fraction: float = 0.0,
+    logfile: str = None,
+    clean_directory: bool = False,
+    epochs: int = 100,
+    learning_rate: float = 1e-4,
+    batch_size: int = 4,
     model: object = None,
     model_name: str = "0.3.0",
     targets: str = "efsm",
-    batch_size: int = 8,
-    val_fraction: float = 0.1,
-    test_fraction: float = 0.0,
     optimizer: str = "Adam",
     scheduler: str = "CosLR",
     criterion: str = "MSE",
-    epochs: int = 100,
-    learning_rate: float = 1e-4,
     use_device: str = None,
     print_freq: int = 10,
-    wandb_path: str = "chgnet/finetuning",
+    wandb_path: str = None,
     save_dir: str = None,
     save_test_result: bool = False,
     train_composition_model: bool = False,
-    logfile: str = None,
-    kwargs_calc: dict = {},
+    calc_kwargs: dict = {},
     **kwargs: dict,
 ):
     """
     Fine-tune CHGNet model from ase Atoms data.
     """
+    # Remove old directory.
+    if clean_directory is True and os.path.isdir(directory):
+        shutil.rmtree(directory)
     # Start from the model in the calculator.
     if calc is not None:
         model = calc.model
@@ -257,7 +262,7 @@ def finetune_CHGNet_model(
     )
     # Return calculator.
     model = trainer.get_best_model()
-    return CHGNetCalculator(model=model, **kwargs_calc)
+    return CHGNetCalculator(model=model, **calc_kwargs)
 
 # -------------------------------------------------------------------------------------
 # GET TRAIN VAL TEST LOADER FROM INDICES
@@ -326,7 +331,7 @@ def finetune_CHGNet_crossval(
     learning_rate: float = 1e-4,
     use_device: str = None,
     print_freq: int = 10,
-    wandb_path: str = "chgnet/crossval-singlepoints",
+    wandb_path: str = None,
     save_dir: str = None,
     train_composition_model: bool = False,
 ):
