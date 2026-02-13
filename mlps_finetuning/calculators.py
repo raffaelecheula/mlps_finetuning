@@ -13,20 +13,20 @@ from ase.calculators.calculator import Calculator
 
 # Aliases for CHGNet model names.
 aliases_CHGNet = {
-    "MPtrj": "0.3.0",
+    "MP": "0.3.0",
     "R2SCAN": "r2scan",
 }
 # Aliases for MACE model names.
 aliases_MACE = {
-    "MP-0": "medium",
-    "MP-0b": "medium-0b",
-    "MP-0b2": "medium-0b2",
-    "MP-0b3": "medium-0b3",
-    "MPA-0": "medium-mpa-0",
+    "MP0": "medium",
+    "MP0b": "medium-0b",
+    "MP0b2": "medium-0b2",
+    "MP0b3": "medium-0b3",
+    "MPA0": "medium-mpa-0",
 }
 # Aliases for OCP model names.
 aliases_OCP = {
-    "GemNet-OC": "GemNet-OC-S2EF-OC20-All",
+    "GemNetOC": "GemNet-OC-S2EF-OC20-All",
     "PaiNN": "PaiNN-S2EF-OC20-All",
     "SCN": "SCN-S2EF-OC20-All+MD",
     "EquiformerV2": "EquiformerV2-31M-S2EF-OC20-All+MD",
@@ -35,10 +35,10 @@ aliases_OCP = {
 }
 # Aliases for FAIRChem model names.
 aliases_FAIRChem = {
-    "UMA-s": "uma-s-1p1",
-    "UMA-m": "uma-m-1p1",
-    "eSEN-s": "esen-sm-conserving-all-oc25",
-    "eSEN-m": "esen-md-direct-all-oc25",
+    "UMAs": "uma-s-1p1",
+    "UMAm": "uma-m-1p1",
+    "eSENs": "esen-sm-conserving-all-oc25",
+    "eSENm": "esen-md-direct-all-oc25",
 }
 
 # -------------------------------------------------------------------------------------

@@ -27,12 +27,15 @@ class CHGNetCalculator(CHGNetCalculatorOriginal):
         self,
         model: object = None,
         model_name: str = None,
+        logfile: str = None,
         **kwargs: dict,
     ):
         # Load pretrained model.
         if model is None and model_name is not None:
             model = CHGNet.load(model_name=model_name, **kwargs)
-        super().__init__(model=model, **kwargs)
+        # Initialize.
+        with RedirectOutput(logfile=logfile):
+            super().__init__(model=model, **kwargs)
         # Counter to keep track of the number of single-point evaluations.
         self.counter = 0
         self.info = {}
