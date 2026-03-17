@@ -26,7 +26,7 @@ aliases_MACE = {
 }
 # Aliases for OCP model names.
 aliases_OCP = {
-    "GemNetOC": "GemNet-OC-S2EF-OC20-All",
+    "GemNet-OC": "GemNet-OC-S2EF-OC20-All",
     "PaiNN": "PaiNN-S2EF-OC20-All",
     "SCN": "SCN-S2EF-OC20-All+MD",
     "EquiformerV2": "EquiformerV2-31M-S2EF-OC20-All+MD",
@@ -35,10 +35,9 @@ aliases_OCP = {
 }
 # Aliases for FAIRChem model names.
 aliases_FAIRChem = {
-    "UMAs": "uma-s-1p1",
-    "UMAm": "uma-m-1p1",
-    "eSENs": "esen-sm-conserving-all-oc25",
-    "eSENm": "esen-md-direct-all-oc25",
+    "UMA": "uma-m-1p1",
+    "eSEN-s": "esen-sm-conserving-all-oc25",
+    "eSEN-m": "esen-md-direct-all-oc25",
 }
 
 # -------------------------------------------------------------------------------------

@@ -7,8 +7,6 @@ import shutil
 import numpy as np
 from torch.utils.data import DataLoader
 from ase.calculators.calculator import Calculator
-from sklearn.model_selection import BaseCrossValidator
-from pymatgen.io.ase import AseAtomsAdaptor
 from chgnet.model import CHGNet
 from chgnet.trainer import Trainer
 from chgnet.data.dataset import Dataset, StructureData, get_train_val_test_loader
@@ -56,6 +54,7 @@ def atoms_list_to_dataset(
     """
     Convert list of ase Atoms objects into StructureData dataset.
     """
+    from pymatgen.io.ase import AseAtomsAdaptor
     structure_list = []
     energy_list = []
     forces_list = []
@@ -266,147 +265,6 @@ def finetune_CHGNet_model(
     # Return calculator.
     model = trainer.get_best_model()
     return CHGNetCalculator(model=model, **calc_kwargs)
-
-# -------------------------------------------------------------------------------------
-# GET TRAIN VAL TEST LOADER FROM INDICES
-# -------------------------------------------------------------------------------------
-
-def get_train_val_test_loader_from_indices(
-    dataset: Dataset,
-    indices_train: list,
-    indices_val: list,
-    indices_test: list = [],
-    batch_size: int = 8,
-    return_test: bool = True,
-    num_workers: int = 0,
-    pin_memory: bool = True,
-) -> tuple:
-    """
-    Partition a dataset into train, val, test loaders according to indices.
-    """
-    from torch.utils.data import DataLoader
-    from torch.utils.data.sampler import SubsetRandomSampler
-    from chgnet.data.dataset import collate_graphs
-    train_loader = DataLoader(
-        dataset=dataset,
-        batch_size=batch_size,
-        collate_fn=collate_graphs,
-        sampler=SubsetRandomSampler(indices=indices_train),
-        num_workers=num_workers,
-        pin_memory=pin_memory,
-    )
-    val_loader = DataLoader(
-        dataset=dataset,
-        batch_size=batch_size,
-        collate_fn=collate_graphs,
-        sampler=SubsetRandomSampler(indices=indices_val),
-        num_workers=num_workers,
-        pin_memory=pin_memory,
-    )
-    if return_test is True:
-        test_loader = DataLoader(
-            dataset=dataset,
-            batch_size=batch_size,
-            collate_fn=collate_graphs,
-            sampler=SubsetRandomSampler(indices=indices_test),
-            num_workers=num_workers,
-            pin_memory=pin_memory,
-        )
-        return train_loader, val_loader, test_loader
-    return train_loader, val_loader
-
-# -------------------------------------------------------------------------------------
-# FINETUNE CHGNET CROSSVAL
-# -------------------------------------------------------------------------------------
-
-def finetune_CHGNet_crossval(
-    atoms_list: list,
-    crossval: BaseCrossValidator,
-    key_groups: str = None,
-    key_stratify: str = None,
-    energy_corr_dict: dict = None,
-    targets: str = "efsm",
-    batch_size: int = 8,
-    optimizer: str = "Adam",
-    scheduler: str = "CosLR",
-    criterion: str = "MSE",
-    epochs: int = 100,
-    learning_rate: float = 1e-4,
-    use_device: str = None,
-    print_freq: int = 10,
-    wandb_path: str = None,
-    save_dir: str = None,
-    train_composition_model: bool = False,
-):
-    """
-    Fine-tune CHGNet model using cross-validation on ASE Atoms data.
-    """
-    # Convert atoms_list into a dataset.
-    dataset = atoms_list_to_dataset(
-        atoms_list=atoms_list,
-        energy_corr_dict=energy_corr_dict,
-        targets=targets,
-    )
-    # Check if dataset is large enough for the specified number of splits.
-    dataset_size = len(dataset)
-    print(f"Dataset size: {dataset_size}")
-    # Get indices, groups, and stratify lists.
-    indices = list(range(dataset_size))
-    if key_groups is not None:
-        groups = [atoms.info[key_groups] for atoms in atoms_list]
-    else:
-        groups = None
-    if key_stratify is not None:
-        stratify = [atoms.info[key_stratify] for atoms in atoms_list]
-    else:
-        stratify = None
-    # Cross-Validation.
-    MAE_energy_list = []
-    MAE_forces_list = []
-    trainer_list = []
-    for ii, (indices_train, indices_val) in enumerate(
-        crossval.split(X=indices, y=stratify, groups=groups)
-    ):
-        # Create data loaders for training and validation sets.
-        train_loader, val_loader = get_train_val_test_loader_from_indices(
-            dataset=dataset,
-            batch_size=batch_size,
-            indices_train=indices_train,
-            indices_val=indices_val,
-            return_test=False,
-        )
-        # Run fine-tuning.
-        trainer = train_CHGNet_model(
-            targets=targets,
-            optimizer=optimizer,
-            scheduler=scheduler,
-            criterion=criterion,
-            epochs=epochs,
-            learning_rate=learning_rate,
-            use_device=use_device,
-            print_freq=print_freq,
-            wandb_path=wandb_path,
-            train_loader=train_loader,
-            val_loader=val_loader,
-            test_loader=None,
-            save_dir=save_dir,
-            train_composition_model=train_composition_model,
-        )
-        # Collect results for this fold.
-        MAE_energy = np.min(trainer.training_history["e"]["val"])
-        MAE_forces = np.min(trainer.training_history["f"]["val"])
-        MAE_energy_list.append(MAE_energy)
-        MAE_forces_list.append(MAE_forces)
-        trainer_list.append(trainer)
-    # Calculate and print average results.
-    MAE_energy_ave = np.mean(MAE_energy_list)
-    MAE_energy_std = np.std(MAE_energy_list)
-    MAE_forces_ave = np.mean(MAE_forces_list)
-    MAE_forces_std = np.std(MAE_forces_list)
-    print(f"MAE Val energy: {MAE_energy_ave:.4f} ± {MAE_energy_std:.4f} eV/atom")
-    print(f"MAE Val forces: {MAE_forces_ave:.4f} ± {MAE_forces_std:.4f} eV/Å")
-    # Return trainers.
-    return trainer_list
 
 # -------------------------------------------------------------------------------------
 # END

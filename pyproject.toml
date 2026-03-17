@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mlps_finetuning"
+version = "0.0.2"
+description = "Tools for the fine-tuning of machine learning potentials (MLPs)."
+readme = "README.md"
+requires-python = ">=3.8, <4"
+license = { text = "GPL-3.0" }
+authors = [
+  { name = "Raffaele Cheula", email = "cheula.raffaele@gmail.com" }
+]
+urls = { "Source" = "https://github.com/raffaelecheula/mlps_finetuning.git" }
+dependencies = [
+    "numpy",
+    "scipy",
+    "ase",
+    "torch",
+    "scikit-learn",
+    "PyYAML",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["mlps_finetuning*"]
+exclude = ["examples*"]

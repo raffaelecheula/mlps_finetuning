@@ -3,7 +3,6 @@
 # -------------------------------------------------------------------------------------
 
 import os
-import json
 import yaml
 import numpy as np
 from ase import Atoms
